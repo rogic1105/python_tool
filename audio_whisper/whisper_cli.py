@@ -23,10 +23,16 @@ SR = 16000          # 16k
 WIN_SEC = 1.5       # 視窗長度（秒）
 HOP_SEC = 0.75      # 視窗位移（秒）
 ENERGY_THRESH = 0.01  # 跳過極低能量視窗的門檻（0~1，依音源可微調）
-INPUT_FILE  = "1217.mp3"  
+FILE_DIR = "data"
+FILE_NAME = "1217.mp3"
+INPUT_FILE  = os.path.join(FILE_DIR, FILE_NAME)
 SPEAKERS = 3
 MODEL = "medium"
 LANGUAGE = "zh"
+OUTPUT_DIR = "data_out"
+OUTPUT_FILE = os.path.join(OUTPUT_DIR, FILE_NAME)
+
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 # MODEL = "medium.en"
 # LANGUAGE = "en"
         
@@ -38,7 +44,7 @@ def ensure_wav_mono16k(input_path: str) -> str:
     若不是 16k/mono PCM WAV，使用 ffmpeg 轉檔到 CWD 同名 .wav
     """
     base = os.path.splitext(os.path.basename(input_path))[0]
-    out_wav = os.path.join(CWD, f"{base}.wav")
+    out_wav = os.path.join(CWD, FILE_DIR, f"{base}.wav")
     subprocess.run([
         "ffmpeg", "-y", "-i", input_path,
         "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(SR),
@@ -516,8 +522,8 @@ def transcribe_with_diarization(
     labeled = align_whisper_to_speakers(wsegs, diar, show_progress=show_progress, tqdm_desc="對齊語者")
 
     file_name = os.path.splitext(os.path.basename(wav_path))[0]
-    srt_path = os.path.join(CWD, f"{file_name}.srt")
-    txt_path = os.path.join(CWD, f"{file_name}.txt")
+    srt_path = os.path.join(OUTPUT_DIR, f"{file_name}.srt")
+    txt_path = os.path.join(OUTPUT_DIR, f"{file_name}.txt")
     write_srt(labeled, srt_path)
     write_txt(labeled, txt_path)
 
