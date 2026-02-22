@@ -29,10 +29,10 @@ CWD = os.getcwd()   # 以目前工作目錄為根
 SR = 16000          # 16k
 WIN_SEC = 1.5       # 視窗長度（秒）
 HOP_SEC = 0.75      # 視窗位移（秒）
-ENERGY_THRESH = 0.01  # 跳過極低能量視窗的門檻
+ENERGY_THRESH = 0.001  # 跳過極低能量視窗的門檻
 FILE_DIR = "data"
 # 使用 r"" 原始字串避免 Windows 路徑反斜線問題
-FILE_NAME = "0110.m4a"
+FILE_NAME = "0221.mp4"
 INPUT_FILE  = os.path.join(FILE_DIR, FILE_NAME)
 SPEAKERS = 3
 MODEL = "medium"

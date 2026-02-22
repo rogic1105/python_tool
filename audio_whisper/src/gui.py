@@ -122,7 +122,7 @@ class App(tk.Tk):
         self.lbl_footer.pack(side="bottom", anchor="w", padx=10, pady=2)
 
     def _browse_file(self):
-        path = filedialog.askopenfilename(filetypes=[("Audio Files", "*.mp3 *.wav *.m4a *.flac"), ("All Files", "*.*")])
+        path = filedialog.askopenfilename(filetypes=[("Audio Files", "*.mp3 *.wav *.m4a *.flac *.mp4 "), ("All Files", "*.*")])
         if path: self.file_path.set(path)
 
     def _browse_output(self):

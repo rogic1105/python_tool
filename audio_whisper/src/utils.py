@@ -48,6 +48,39 @@ def find_ffmpeg_executable():
     path = shutil.which("ffmpeg")
     if path:
         return path
+
+    # 2. 常見的手動安裝路徑 (Windows)
+    if platform.system() == "Windows":
+        common_paths = [
+            r"C:\ffmpeg\bin\ffmpeg.exe",
+            r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+            r"C:\Program Files (x86)\ffmpeg\bin\ffmpeg.exe",
+            r"C:\CmdTools\ffmpeg\bin\ffmpeg.exe",
+        ]
+        
+        # 加入 Scoop 路徑
+        user_profile = os.environ.get("USERPROFILE", "")
+        if user_profile:
+            common_paths.append(os.path.join(user_profile, "scoop", "shims", "ffmpeg.exe"))
+            common_paths.append(os.path.join(user_profile, "scoop", "apps", "ffmpeg", "current", "bin", "ffmpeg.exe"))
+
+        # 加入 Chocolatey 路徑
+        program_data = os.environ.get("ProgramData", "")
+        if program_data:
+            common_paths.append(os.path.join(program_data, "chocolatey", "bin", "ffmpeg.exe"))
+            
+        # 加入 WinGet 路徑
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            common_paths.append(os.path.join(local_app_data, "Microsoft", "WinGet", "Links", "ffmpeg.exe"))
+
+        # 加入當前目錄
+        common_paths.append(os.path.join(os.getcwd(), "ffmpeg.exe"))
+        common_paths.append(os.path.join(os.getcwd(), "bin", "ffmpeg.exe"))
+
+        for p in common_paths:
+            if os.path.exists(p):
+                return p
             
     return "ffmpeg"
 

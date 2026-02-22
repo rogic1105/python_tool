@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 def run_cli(args):
     pipeline = Pipeline(DEFAULT_OUTPUT_DIR)
-    ㄊ
+
     # CLI 用一個簡單的進度條來顯示總體感覺，不分三條
     pbar = tqdm(total=100, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]')
     
