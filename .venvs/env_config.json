@@ -1,0 +1,4 @@
+{
+  "demucs": "/opt/homebrew/Caskroom/miniconda/base/envs/demucs-env/bin/python",
+  "whisper": "/opt/homebrew/Caskroom/miniconda/base/envs/whisper-env/bin/python"
+}

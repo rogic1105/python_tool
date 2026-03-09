@@ -1,0 +1,252 @@
+"""Whisper GUI Panel — runs in the main (lightweight) env.
+
+Heavy processing is delegated to runner.py inside the whisper venv via subprocess.
+Output lines are parsed using the structured prefix protocol defined in isolated_tool.py.
+"""
+
+import os
+import subprocess
+import threading
+import tkinter as tk
+from pathlib import Path
+from tkinter import ttk, filedialog, scrolledtext, messagebox
+
+from .config import DEFAULT_OUTPUT_DIR
+
+RUNNER = Path(__file__).parent.parent / "runner.py"
+
+
+class WhisperPanel(ttk.Frame):
+    def __init__(self, parent, tool):
+        super().__init__(parent)
+        self.tool = tool          # IsolatedTool instance
+        self.is_running = False
+        self._proc = None
+
+        self.file_path = tk.StringVar()
+        from core.utils import load_pref
+        self.output_path = tk.StringVar(value=load_pref("whisper.output_dir", DEFAULT_OUTPUT_DIR))
+        self.model_size = tk.StringVar(value="medium")
+        self.language = tk.StringVar(value="zh")
+        self.num_speakers = tk.IntVar(value=0)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        top = ttk.Frame(self)
+        top.pack(fill="x", padx=10, pady=5)
+
+        # 1. 檔案與路徑
+        frame_io = ttk.LabelFrame(top, text="1. 檔案與路徑", padding=8)
+        frame_io.pack(fill="x", pady=3)
+        grid = ttk.Frame(frame_io)
+        grid.pack(fill="x")
+        ttk.Label(grid, text="輸入音檔:", width=10).grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Entry(grid, textvariable=self.file_path, state="readonly").grid(row=0, column=1, sticky="ew", padx=5)
+        ttk.Button(grid, text="選擇檔案", command=self._browse_file).grid(row=0, column=2)
+        ttk.Label(grid, text="輸出目錄:", width=10).grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Entry(grid, textvariable=self.output_path).grid(row=1, column=1, sticky="ew", padx=5)
+        ttk.Button(grid, text="變更目錄", command=self._browse_output).grid(row=1, column=2)
+        grid.columnconfigure(1, weight=1)
+
+        # 2. 參數設定
+        frame_set = ttk.LabelFrame(top, text="2. 參數設定", padding=8)
+        frame_set.pack(fill="x", pady=3)
+        ttk.Label(frame_set, text="模型:").pack(side="left")
+        cb_model = ttk.Combobox(frame_set, textvariable=self.model_size, state="readonly", width=10)
+        cb_model["values"] = ("tiny", "base", "small", "medium", "large-v2", "large-v3")
+        cb_model.pack(side="left", padx=5)
+        ttk.Label(frame_set, text="語言:").pack(side="left", padx=(10, 0))
+        cb_lang = ttk.Combobox(frame_set, textvariable=self.language, state="readonly", width=5)
+        cb_lang["values"] = ("zh", "en", "ja", "ko")
+        cb_lang.pack(side="left", padx=5)
+        ttk.Label(frame_set, text="人數(0自動):").pack(side="left", padx=(10, 0))
+        ttk.Entry(frame_set, textvariable=self.num_speakers, width=5).pack(side="left", padx=5)
+
+        # 3. 操作按鈕
+        btn_frame = ttk.Frame(top)
+        btn_frame.pack(fill="x", pady=6)
+        self.btn_run = ttk.Button(btn_frame, text="開始執行", command=self._start)
+        self.btn_run.pack(side="left", fill="x", expand=True, padx=(0, 3))
+        self.btn_cancel = ttk.Button(btn_frame, text="取消任務", command=self._cancel, state="disabled")
+        self.btn_cancel.pack(side="right", fill="x", expand=True, padx=(3, 0))
+
+        # 進度
+        frame_prog = ttk.LabelFrame(self, text="執行進度", padding=8)
+        frame_prog.pack(fill="x", padx=10, pady=3)
+        self.lbl_p1 = ttk.Label(frame_prog, text="步驟 1: 格式轉換", foreground="gray")
+        self.lbl_p1.pack(anchor="w")
+        self.bar_p1 = ttk.Progressbar(frame_prog, orient="horizontal", mode="determinate")
+        self.bar_p1.pack(fill="x", pady=(0, 3))
+        self.lbl_p2 = ttk.Label(frame_prog, text="步驟 2: 語者分析", foreground="gray")
+        self.lbl_p2.pack(anchor="w")
+        self.bar_p2 = ttk.Progressbar(frame_prog, orient="horizontal", mode="determinate")
+        self.bar_p2.pack(fill="x", pady=(0, 3))
+        self.lbl_p3 = ttk.Label(frame_prog, text="步驟 3: 語音轉錄", foreground="gray")
+        self.lbl_p3.pack(anchor="w")
+        self.bar_p3 = ttk.Progressbar(frame_prog, orient="horizontal", mode="determinate")
+        self.bar_p3.pack(fill="x")
+
+        # 輸出區
+        pw = ttk.PanedWindow(self, orient="horizontal")
+        pw.pack(fill="both", expand=True, padx=10, pady=(3, 10))
+        frame_sys = ttk.LabelFrame(pw, text="系統資訊", padding=5)
+        pw.add(frame_sys, weight=1)
+        self.txt_sys = scrolledtext.ScrolledText(frame_sys, state="disabled", font=("Consolas", 9))
+        self.txt_sys.pack(fill="both", expand=True)
+        frame_content = ttk.LabelFrame(pw, text="轉錄內容", padding=5)
+        pw.add(frame_content, weight=2)
+        self.txt_content = scrolledtext.ScrolledText(frame_content, state="disabled", font=("", 10))
+        self.txt_content.pack(fill="both", expand=True)
+
+    # ------------------------------------------------------------------
+    # UI callbacks
+    # ------------------------------------------------------------------
+
+    def _browse_file(self):
+        p = filedialog.askopenfilename(
+            filetypes=[("Audio/Video", "*.mp3 *.wav *.m4a *.flac *.mp4"), ("All", "*.*")]
+        )
+        if p:
+            self.file_path.set(p)
+
+    def _browse_output(self):
+        p = filedialog.askdirectory()
+        if p:
+            self.output_path.set(p)
+            from core.utils import save_pref
+            save_pref("whisper.output_dir", p)
+
+    def _cancel(self):
+        if self._proc and self._proc.poll() is None:
+            if messagebox.askyesno("取消", "確定要終止任務嗎？"):
+                self._proc.terminate()
+                self.btn_cancel.config(state="disabled")
+
+    def _start(self):
+        f = self.file_path.get()
+        out = self.output_path.get()
+        if not f or not os.path.exists(f):
+            return messagebox.showwarning("警告", "請選擇有效的音檔")
+        if not out:
+            return messagebox.showwarning("警告", "請指定輸出路徑")
+
+        self.is_running = True
+        self.btn_run.config(state="disabled")
+        self.btn_cancel.config(state="normal")
+        self._reset_ui()
+
+        try:
+            spk = self.num_speakers.get()
+        except Exception:
+            spk = 0
+
+        cmd = [
+            self.tool.active_python, str(RUNNER),
+            f,
+            "--model", self.model_size.get(),
+            "--language", self.language.get(),
+            "--speakers", str(spk),
+            "--output", out,
+        ]
+        threading.Thread(target=self._worker, args=(cmd,), daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # Subprocess worker — reads structured output lines
+    # ------------------------------------------------------------------
+
+    def _worker(self, cmd: list):
+        try:
+            self._proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
+            )
+            for raw in self._proc.stdout:
+                line = raw.rstrip()
+                if line.startswith("LOG:"):
+                    self._log_sys(line[4:])
+                elif line.startswith("PROGRESS:"):
+                    parts = line[9:].split(",", 2)
+                    try:
+                        stage = int(parts[0])
+                        val = float(parts[1])
+                        msg = parts[2] if len(parts) > 2 else None
+                        self.after(0, self._update_progress, stage, val, msg)
+                    except (ValueError, IndexError):
+                        pass
+                elif line.startswith("TEXT:"):
+                    self._log_content(line[5:])
+                elif line.startswith("DONE:"):
+                    srt = line[5:]
+                    self.after(0, self._on_done, srt)
+                elif line.startswith("ERROR:"):
+                    self._log_sys(f"[錯誤] {line[6:]}")
+                else:
+                    # Fallback: show raw output in log
+                    if line:
+                        self._log_sys(line)
+
+            self._proc.wait()
+        except Exception as e:
+            self._log_sys(f"[例外] {e}")
+        finally:
+            self.is_running = False
+            self._proc = None
+            self.after(0, self._reset_buttons)
+
+    # ------------------------------------------------------------------
+    # UI update helpers (all thread-safe via self.after)
+    # ------------------------------------------------------------------
+
+    def _on_done(self, srt: str):
+        self.is_running = False
+        self._reset_buttons()
+        messagebox.showinfo("完成", f"處理完畢！\n{srt}")
+
+    def _reset_buttons(self):
+        self.btn_run.config(state="normal")
+        self.btn_cancel.config(state="disabled")
+
+    def _log_sys(self, msg: str):
+        self.after(0, lambda: [
+            self.txt_sys.config(state="normal"),
+            self.txt_sys.insert("end", f"> {msg}\n"),
+            self.txt_sys.see("end"),
+            self.txt_sys.config(state="disabled"),
+        ])
+
+    def _log_content(self, text: str):
+        self.after(0, lambda: [
+            self.txt_content.config(state="normal"),
+            self.txt_content.insert("end", text + "\n"),
+            self.txt_content.see("end"),
+            self.txt_content.config(state="disabled"),
+        ])
+
+    def _update_progress(self, stage: int, val: float, msg: str = None):
+        color = "green" if val >= 100 else "blue"
+        if stage == 1:
+            self.bar_p1["value"] = val
+            self.lbl_p1.config(foreground=color)
+        elif stage == 2:
+            self.bar_p2["value"] = val
+            self.lbl_p2.config(foreground=color)
+        elif stage == 3:
+            self.bar_p3["value"] = val
+            lbl_text = f"步驟 3: 語音轉錄 ({int(val)}%)"
+            if msg:
+                lbl_text += f" - {msg}"
+            self.lbl_p3.config(text=lbl_text, foreground=color)
+
+    def _reset_ui(self):
+        for bar, lbl, text in [
+            (self.bar_p1, self.lbl_p1, "步驟 1: 格式轉換"),
+            (self.bar_p2, self.lbl_p2, "步驟 2: 語者分析"),
+            (self.bar_p3, self.lbl_p3, "步驟 3: 語音轉錄"),
+        ]:
+            bar["value"] = 0
+            lbl.config(foreground="gray", text=text)
+        for txt in (self.txt_sys, self.txt_content):
+            txt.config(state="normal")
+            txt.delete(1.0, "end")
+            txt.config(state="disabled")

@@ -1,64 +1,128 @@
-
-# Python Tools Collection (Python 小工具集合)
+# Python Tools Collection
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Mac%20%7C%20Windows%20%7C%20Linux-lightgray)]()
 
-這是一個存放各種實用 Python 自動化腳本與應用程式的倉庫。
-專案內容包含從簡單的演算法計算到結合 AI 模型的複雜應用，未來將持續新增更多實用工具以解決生活或工作中的各種問題。
+各種實用 Python 自動化工具集合，具備統一的 CLI 與 Tab 分頁 GUI 介面，支援 Mac / Windows / Linux。
 
-This repository collects various practical Python scripts and tools. More tools will be added over time.
+## 快速開始
 
-## 🧰 工具列表 (Tools List)
-
-目前收錄的工具如下，點擊連結可查看詳細使用說明與安裝方式：
-
-| 工具名稱 | 資料夾 | 簡介 | 關鍵技術 / 應用 |
-| :--- | :--- | :--- | :--- |
-| **發票湊數小幫手**<br>(Invoice Helper) | [`/invoice_helper`](./invoice_helper/readme.md) | 解決「子集合加總問題」。協助從一堆金額中找出總和最接近目標金額的組合。 | • Dynamic Programming (DP)<br>• 帳務處理、發票報銷 |
-| **語音轉錄與語者分離**<br>(Whisper Diarization) | [`/audio_whisper`](./audio_whisper/readme.md) | 本機端的語音轉文字工具。除產生逐字稿外，還能自動區分不同的說話者 (Speaker A, Speaker B)。 | • OpenAI Faster-Whisper<br>• Resemblyzer (聲紋分析)<br>• 會議記錄、字幕製作 |
-
-## 🚀 快速開始 (Getting Started)
-
-由於每個工具所需的依賴套件 (Dependencies) 差異較大（例如 `invoice_helper` 只需要 numpy，而 `audio_whisper` 需要 PyTorch 等深度學習庫），建議依照以下步驟使用：
-
-1. **複製專案到本地**
-   ```bash
-   git clone [https://github.com/rogic1105/python_tool.git](https://github.com/rogic1105/python_tool.git)
-   cd python_tool
-
-```
-
-2. **進入感興趣的工具目錄**
 ```bash
-cd invoice_helper
-# 或
-cd audio_whisper
+git clone https://github.com/rogic1105/python_tool.git
+cd python_tool
 
+# 列出所有可用工具
+python run.py
+
+# 啟動圖形介面
+python ui.py
 ```
 
+## 工具列表
 
-3. **查看該目錄下的 README 並安裝對應依賴**
-每個工具資料夾內皆有獨立的 `readme.md` 與需求說明。
+### 影音工具 (av)
 
-## 📂 專案結構 (Structure)
+| 工具 | CLI 名稱 | 說明 | 主要依賴 |
+|---|---|---|---|
+| Whisper 語音轉錄 | `whisper` | 語音轉文字 + 語者分離，輸出 SRT/TXT | faster-whisper, resemblyzer |
+| MP4 轉 MP3 | `mp4_to_mp3` | 批次影片轉 320k MP3 | ffmpeg |
+| 影片轉 H.264 | `video_to_h264` | 自動選最佳加速（Mac/CUDA/CPU） | ffmpeg |
+| 人聲去除 | `audio_dehuman` | Demucs 分離人聲與背景音 | demucs |
+| 取得首尾幀 | `get_frames` | 擷取影片第一幀與最後一幀為 PNG | ffmpeg |
 
-```text
+### 占卜工具 (divination)
+
+| 工具 | CLI 名稱 | 說明 | 主要依賴 |
+|---|---|---|---|
+| 水晶路徑動畫 | `crystal_path` | 六邊形水晶球彩虹軌跡動畫，輸出 MP4 | matplotlib, ffmpeg |
+
+### 資料整理 (data)
+
+| 工具 | CLI 名稱 | 說明 | 主要依賴 |
+|---|---|---|---|
+| 發票湊數小幫手 | `invoice_helper` | 子集合加總（DP），找最接近目標的金額組合 | numpy |
+
+## 使用方式
+
+### CLI
+
+```bash
+# 查看工具說明
+python run.py whisper --help
+
+# Whisper 語音轉錄
+python run.py whisper audio.mp3 --language zh --speakers 2 --output ./result
+
+# MP4 批次轉 MP3
+python run.py mp4_to_mp3 --src ./videos --out ./mp3s
+
+# 影片轉 H.264（自動偵測最佳 codec）
+python run.py video_to_h264 video.mkv
+
+# 人聲去除
+python run.py audio_dehuman song.mp3 --output ./separated
+
+# 擷取首尾幀
+python run.py get_frames video.mp4
+
+# 發票湊數
+python run.py invoice_helper --file price.txt
+
+# 水晶路徑動畫
+python run.py crystal_path --output ./output
+```
+
+### GUI
+
+```bash
+python ui.py
+```
+
+介面為 Tab 分頁設計，每個類別對應一個分頁，左側選擇工具，右側顯示操作面板。
+
+## 專案結構
+
+```
 python_tool/
-├── audio_whisper/     # [AI] 語音轉錄與語者分離工具 (含 GUI/CLI)
-├── invoice_helper/    # [Algo] 發票金額湊數工具 (含 GUI/CLI)
-├── .gitignore
-├── LICENSE
-└── README.md          # 本檔案
-
+├── run.py              # 統一 CLI 入口
+├── ui.py               # 統一 GUI 入口（Tab 分頁）
+├── CLAUDE.md           # Claude AI 開發指引
+├── core/               # 框架核心
+│   ├── base_tool.py    # BaseTool 抽象基類
+│   ├── registry.py     # 工具自動掃描與註冊
+│   └── utils.py        # 共用工具（FFmpeg 偵測、平台判斷）
+└── tools/              # 所有工具
+    ├── av/             # 影音工具
+    ├── divination/     # 占卜工具
+    └── data/           # 資料整理工具
 ```
 
-## 📝 授權 (License)
+## 新增工具
 
-本專案採用 **MIT License** 開源授權，詳情請見 [LICENSE](https://www.google.com/search?q=./LICENSE) 文件。
-歡迎自由使用、修改與分發，但請保留原作者版權聲明。
+只需在 `tools/<類別>/` 下建立資料夾，並新增繼承 `BaseTool` 的 `tool.py`，`run.py` 和 `ui.py` 會**自動偵測**，不需修改任何現有檔案。詳見 [CLAUDE.md](./CLAUDE.md)。
+
+## 安裝依賴
+
+由於各工具依賴差異大，建議按需安裝。以 whisper 為例：
+
+```bash
+pip install faster-whisper resemblyzer scikit-learn librosa soundfile tqdm
+```
+
+FFmpeg 為多數影音工具必備：
+```bash
+# Mac
+brew install ffmpeg
+
+# Windows
+# https://ffmpeg.org/download.html
+```
+
+## 授權
+
+MIT License — 詳見 [LICENSE](./LICENSE)
 
 ---
 
-*Created by [rogic1105*](https://www.google.com/search?q=https://github.com/rogic1105)
-
+*Created by [rogic1105](https://github.com/rogic1105)*
