@@ -231,18 +231,46 @@ Key 命名慣例：`"<tool_name>.<setting>"`
 
 ## 平台隔離規則（跨平台修改守則）
 
-本專案同時支援 **macOS** 與 **Windows**，修改時必須嚴格遵守：
+> **Claude Code 必讀指令**：本專案同時在 macOS 與 Windows 上使用。
+> 每次修改前，必須先判斷目前所在平台，並嚴格遵守以下規則，**不得因修一個平台而動到另一個平台的邏輯**。
 
-- **平台專屬啟動腳本不得互相影響**
-  - `launch.bat` → Windows 專用，不得在 macOS 上測試或修改
-  - `launch.sh`（若存在）→ macOS 專用，不得在 Windows 上測試或修改
-- **修改任一平台的程式碼前，必須先確認該段邏輯是否跨平台共用**
-  - 共用邏輯（`core/`、`tools/`）：修改後必須在兩個平台都能運作
-  - 平台專屬邏輯：用 `if sys.platform == "win32":` / `if platform.system() == "Darwin":` 區隔，只改自己那段
-- **禁止為了修 Windows 問題而動到 Mac 專屬設定，反之亦然**
-  - 例如：`get_best_h264_codec()` 中 `Darwin` 的 `h264_videotoolbox` 設定不得因 Windows 修改而被移除
-- **bat 檔案只能使用 ASCII 英文**，不可含中文（會亂碼）
-- **shell 腳本（.sh）只用 Unix 語法**，不可含 Windows 路徑或 `%VAR%` 語法
+### 修改前必做的平台確認
+
+拿到任何修改需求時，先自問：
+
+1. **這段邏輯是共用的還是平台專屬的？**
+   - 共用（`core/`、`tools/` 內無 `sys.platform` 分支）→ 修改後必須兩個平台都能運作
+   - 平台專屬（有 `if sys.platform == "win32":` 或 `if sys.platform == "darwin":` 包住）→ 只改對應那段，不碰另一段
+2. **有沒有對應平台的 requirements 檔案？** → 只改當前平台的那個（`requirements.txt` / `requirements-cuda.txt` / `requirements-mac.txt`）
+3. **有沒有對應平台的啟動腳本？** → `launch.bat` 只在 Windows 改，`launch.sh` 只在 macOS 改
+
+### 硬性禁止事項
+
+- ❌ **禁止**在 Windows 上修改 `if sys.platform == "darwin":` 區塊內的任何程式碼
+- ❌ **禁止**在 macOS 上修改 `if sys.platform == "win32":` 區塊內的任何程式碼
+- ❌ **禁止**為了修 Windows 問題而刪除或更動 Mac 專屬設定（反之亦然）
+  - 例如：`get_best_h264_codec()` 中 `h264_videotoolbox` 的設定，在 Windows 上絕對不可動
+  - 例如：`requirements-mac.txt` 的內容，在 Windows 上絕對不可動
+- ❌ **禁止**在 `.bat` 檔案中加入中文（會亂碼）
+- ❌ **禁止**在 `.sh` 檔案中使用 Windows 路徑或 `%VAR%` 語法
+
+### 正確的平台分支寫法
+
+```python
+# ✅ 正確：用 sys.platform 明確分支
+if sys.platform == "win32":
+    # Windows 專屬邏輯
+    ...
+elif sys.platform == "darwin":
+    # macOS 專屬邏輯
+    ...
+else:
+    # Linux fallback
+    ...
+
+# ❌ 錯誤：不分平台直接寫，導致其中一個平台壞掉
+sys.stdout = io.TextIOWrapper(...)  # Windows 有 GC bug，Mac 不需要
+```
 
 ---
 
