@@ -10,13 +10,19 @@ def get_output_path(input_path: Path) -> Path:
     return output_path
 
 
-def convert_to_h264(input_path: str, quality: int = None, log_cb=print) -> Path:
+def convert_to_h264(input_path: str, quality: int = None,
+                    output_dir: str = None, log_cb=print) -> Path:
     """Convert video to H.264. Auto-selects best codec for the platform."""
     input_file = Path(input_path)
     if not input_file.exists():
         raise FileNotFoundError(f"找不到檔案: {input_path}")
 
-    output_file = get_output_path(input_file)
+    if output_dir:
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        base = get_output_path(input_file)
+        output_file = Path(output_dir) / base.name
+    else:
+        output_file = get_output_path(input_file)
     codec, extra_args = get_best_h264_codec()
 
     # Override quality if provided

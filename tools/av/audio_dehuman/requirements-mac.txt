@@ -1,0 +1,3 @@
+# macOS — CPU (Apple Silicon 可使用 MPS，由 demucs 自動選擇)
+demucs==4.0.1
+soundfile

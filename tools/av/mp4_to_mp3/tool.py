@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext
 from core.base_tool import BaseTool
+from core.utils import open_folder
 
 
 class Mp4ToMp3Tool(BaseTool):
@@ -43,9 +44,11 @@ class _Mp4ToMp3Panel(ttk.Frame):
         ttk.Label(grid, text="來源目錄:", width=10).grid(row=0, column=0, sticky="w", pady=4)
         ttk.Entry(grid, textvariable=self.src_var).grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(grid, text="瀏覽", command=lambda: self._browse(self.src_var)).grid(row=0, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.src_var.get())).grid(row=0, column=3, padx=(4, 0))
         ttk.Label(grid, text="輸出目錄:", width=10).grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(grid, textvariable=self.out_var).grid(row=1, column=1, sticky="ew", padx=5)
         ttk.Button(grid, text="瀏覽", command=lambda: self._browse(self.out_var)).grid(row=1, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.out_var.get())).grid(row=1, column=3, padx=(4, 0))
         grid.columnconfigure(1, weight=1)
 
         self.btn_run = ttk.Button(self, text="開始轉換", command=self._run)

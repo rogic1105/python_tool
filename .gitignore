@@ -206,6 +206,28 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# ─────────────────────────────
+# 本專案專用 (python_tool)
+# ─────────────────────────────
+
+# 編輯器 / AI 工具設定（本機用，不需要共享）
+.vscode/
+.claude/
+
+# 虛擬環境目錄（實際執行檔很大，不 commit）
+# 保留 .venvs/*.json（使用者偏好設定）
+.venvs/*/
+
+# 工具輸出目錄
+output/
+separated/
+htdemucs/
+
+# PyTorch 模型快取（執行時自動下載）
+*.th
+*.pt
+*.pth
+
 
 # -----------------------------
 # 忽略影像檔案 (Images)

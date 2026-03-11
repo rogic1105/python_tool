@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 from core.base_tool import BaseTool
+from core.utils import open_folder
 
 
 class GetFramesTool(BaseTool):
@@ -14,10 +15,11 @@ class GetFramesTool(BaseTool):
     def add_cli_args(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("input", help="影片檔案路徑")
         parser.add_argument("--prefix", default=None, help="輸出檔案前綴 (預設: 與輸入同名)")
+        parser.add_argument("--output-dir", default=None, help="輸出目錄 (預設: 與影片同目錄)")
 
     def run_cli(self, args) -> None:
         from tools.av.get_frames.core import get_first_last_frames
-        success = get_first_last_frames(args.input, args.prefix)
+        success = get_first_last_frames(args.input, args.prefix, args.output_dir)
         if not success:
             print("[失敗] 擷取幀時發生錯誤")
 
@@ -26,10 +28,13 @@ class GetFramesTool(BaseTool):
 
 
 class _GetFramesPanel(ttk.Frame):
+    _PREF_KEY = "get_frames.output_dir"
+
     def __init__(self, parent):
         super().__init__(parent)
+        from core.utils import load_pref
         self.file_var = tk.StringVar()
-        self.prefix_var = tk.StringVar()
+        self.output_var = tk.StringVar(value=load_pref(self._PREF_KEY, ""))
         self._build()
 
     def _build(self):
@@ -40,12 +45,18 @@ class _GetFramesPanel(ttk.Frame):
         frame.pack(fill="x", padx=20, pady=15)
         grid = ttk.Frame(frame)
         grid.pack(fill="x")
+
         ttk.Label(grid, text="影片檔案:", width=10).grid(row=0, column=0, sticky="w", pady=4)
         ttk.Entry(grid, textvariable=self.file_var).grid(row=0, column=1, sticky="ew", padx=5)
-        ttk.Button(grid, text="瀏覽", command=self._browse).grid(row=0, column=2)
-        ttk.Label(grid, text="輸出前綴:", width=10).grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Entry(grid, textvariable=self.prefix_var).grid(row=1, column=1, sticky="ew", padx=5)
-        ttk.Label(grid, text="(留空與輸入同名)", foreground="gray").grid(row=1, column=2, sticky="w")
+        ttk.Button(grid, text="瀏覽", command=self._browse_file).grid(row=0, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.file_var.get())).grid(row=0, column=3, padx=(4, 0))
+
+        ttk.Label(grid, text="輸出目錄:", width=10).grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Entry(grid, textvariable=self.output_var).grid(row=1, column=1, sticky="ew", padx=5)
+        ttk.Button(grid, text="瀏覽", command=self._browse_output).grid(row=1, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.output_var.get())).grid(row=1, column=3, padx=(4, 0))
+        ttk.Label(grid, text="(留空與影片同目錄)", foreground="gray").grid(row=1, column=4, sticky="w", padx=4)
+
         grid.columnconfigure(1, weight=1)
 
         self.btn_run = ttk.Button(self, text="擷取幀", command=self._run)
@@ -56,10 +67,17 @@ class _GetFramesPanel(ttk.Frame):
         self.log = scrolledtext.ScrolledText(log_frame, state="disabled", font=("Consolas", 9))
         self.log.pack(fill="both", expand=True)
 
-    def _browse(self):
+    def _browse_file(self):
         p = filedialog.askopenfilename(filetypes=[("Video", "*.mp4 *.mkv *.mov *.avi"), ("All", "*.*")])
         if p:
             self.file_var.set(p)
+
+    def _browse_output(self):
+        p = filedialog.askdirectory()
+        if p:
+            self.output_var.set(p)
+            from core.utils import save_pref
+            save_pref(self._PREF_KEY, p)
 
     def _log(self, msg):
         self.log.config(state="normal")
@@ -73,11 +91,14 @@ class _GetFramesPanel(ttk.Frame):
         f = self.file_var.get()
         if not f:
             return messagebox.showwarning("警告", "請選擇影片檔案")
-        prefix = self.prefix_var.get().strip() or None
+        out_dir = self.output_var.get().strip() or None
         self.btn_run.config(state="disabled")
 
         def worker():
-            success = get_first_last_frames(f, prefix, log_cb=lambda m: self.after(0, self._log, m))
+            success = get_first_last_frames(
+                f, output_dir=out_dir,
+                log_cb=lambda m: self.after(0, self._log, m),
+            )
             msg = "擷取完成！" if success else "擷取失敗，請查看紀錄"
             self.after(0, lambda: [messagebox.showinfo("結果", msg), self.btn_run.config(state="normal")])
 

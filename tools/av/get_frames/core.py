@@ -5,18 +5,25 @@ from pathlib import Path
 from core.utils import FFMPEG_CMD
 
 
-def get_first_last_frames(video_path: str, output_prefix: str = None, log_cb=print) -> bool:
+def get_first_last_frames(video_path: str, output_prefix: str = None,
+                          output_dir: str = None, log_cb=print) -> bool:
     if not os.path.exists(video_path):
         log_cb(f"[錯誤] 找不到檔案: {video_path}")
         return False
 
-    if output_prefix is None:
+    base_name = os.path.splitext(os.path.basename(video_path))[0]
+
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        first_out = os.path.join(output_dir, f"{base_name}_first_frame.png")
+        last_out  = os.path.join(output_dir, f"{base_name}_last_frame.png")
+    elif output_prefix is None:
         base = os.path.splitext(video_path)[0]
         first_out = f"{base}_first_frame.png"
-        last_out = f"{base}_last_frame.png"
+        last_out  = f"{base}_last_frame.png"
     else:
         first_out = f"{output_prefix}_first_frame.png"
-        last_out = f"{output_prefix}_last_frame.png"
+        last_out  = f"{output_prefix}_last_frame.png"
 
     ffprobe = FFMPEG_CMD.replace("ffmpeg", "ffprobe")
 

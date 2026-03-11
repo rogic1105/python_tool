@@ -16,6 +16,13 @@ import sys
 import os
 import argparse
 
+# Force UTF-8 stdout/stderr on Windows (default is cp950 which can't encode many CJK chars).
+# Use reconfigure() — NOT io.TextIOWrapper(sys.stdout.buffer, ...) — because replacing
+# sys.stdout causes the old wrapper to be GC'd, which closes the shared buffer.
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Make src/ importable relative to this file's directory
 sys.path.insert(0, os.path.dirname(__file__))
 

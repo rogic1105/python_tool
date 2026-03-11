@@ -196,14 +196,130 @@ Key 命名慣例：`"<tool_name>.<setting>"`
 
 ---
 
+## 平台隔離規則（跨平台修改守則）
+
+本專案同時支援 **macOS** 與 **Windows**，修改時必須嚴格遵守：
+
+- **平台專屬啟動腳本不得互相影響**
+  - `launch.bat` → Windows 專用，不得在 macOS 上測試或修改
+  - `launch.sh`（若存在）→ macOS 專用，不得在 Windows 上測試或修改
+- **修改任一平台的程式碼前，必須先確認該段邏輯是否跨平台共用**
+  - 共用邏輯（`core/`、`tools/`）：修改後必須在兩個平台都能運作
+  - 平台專屬邏輯：用 `if sys.platform == "win32":` / `if platform.system() == "Darwin":` 區隔，只改自己那段
+- **禁止為了修 Windows 問題而動到 Mac 專屬設定，反之亦然**
+  - 例如：`get_best_h264_codec()` 中 `Darwin` 的 `h264_videotoolbox` 設定不得因 Windows 修改而被移除
+- **bat 檔案只能使用 ASCII 英文**，不可含中文（會亂碼）
+- **shell 腳本（.sh）只用 Unix 語法**，不可含 Windows 路徑或 `%VAR%` 語法
+
+---
+
+## Windows 相容性已知問題與解法
+
+新增 Windows 功能時必須注意，以下是實際踩過的坑：
+
+### 1. subprocess 中文亂碼 / cp950 編碼錯誤
+
+**症狀**：`'cp950' codec can't encode character` 或 log 顯示亂碼。
+
+**原因**：Windows Python 預設 stdout 為 cp950（Big5），中文字元超出範圍就崩潰。
+
+**解法**（兩層都要做）：
+
+```python
+# (A) 呼叫端 Popen 加環境變數
+env = os.environ.copy()
+env["PYTHONIOENCODING"] = "utf-8"
+proc = subprocess.Popen(cmd, ..., encoding="utf-8", errors="replace", env=env)
+
+# (B) runner.py 開頭強制覆寫 stdout（Windows only）
+import sys, io
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+```
+
+### 2. conda 不在 PATH（Windows）
+
+**症狀**：`conda env list` 找不到命令，環境掃描失敗。
+
+**原因**：Windows 的 conda 只在 Anaconda Prompt 裡有 PATH，直接跑 `python ui.py` 沒有。
+
+**解法**：使用 `core/isolated_tool.py` 的 `_find_conda_exe()`，會掃描常見安裝位置：
+`%USERPROFILE%\anaconda3\Scripts\conda.exe` 等。
+
+### 3. conda env list --json 沒有環境名稱
+
+**症狀**：環境列表只顯示路徑，base 環境標成 `anaconda3`。
+
+**原因**：`conda env list --json` 的 `envs` 欄位只有路徑，沒有名稱；且 base 路徑重複出現（大小寫不同）。
+
+**解法**：改用 `conda env list`（文字格式）解析，第一欄就是名稱：
+
+```python
+# 使用 _parse_conda_env_list(conda_exe) → [(name, path), ...]
+# 在 core/isolated_tool.py 已實作
+```
+
+### 4. conda Python 位置與 venv 不同（Windows）
+
+**症狀**：掃描到 conda 環境但找不到 python.exe，顯示為空。
+
+**原因**：Windows conda 環境的 `python.exe` 直接放在環境**根目錄**，不在 `Scripts\` 下。
+Mac conda 放在 `bin/python`（已涵蓋）。
+
+**解法**：`_python_in_dir()` 候選路徑順序：
+```python
+d / "bin" / "python"       # Mac/Linux venv + conda
+d / "Scripts" / "python.exe"  # Windows venv
+d / "python.exe"           # Windows conda (根目錄)
+```
+
+### 5. matplotlib FFMpegWriter 找不到 ffmpeg（Windows）
+
+**症狀**：`[WinError 2] 系統找不到指定的檔案`。
+
+**原因**：matplotlib 不會自動查 PATH 以外的位置，Windows 常見安裝路徑未在 PATH。
+
+**解法**：在工具 `core.py` 開頭設定 rcParams：
+
+```python
+from core.utils import FFMPEG_CMD
+matplotlib.rcParams["animation.ffmpeg_path"] = FFMPEG_CMD
+```
+
+### 6. pyenv 路徑差異（Windows）
+
+**原因**：pyenv-win 安裝在 `~/.pyenv/pyenv-win/versions/`，不是 Mac 的 `~/.pyenv/versions/`。
+
+**解法**：`scan_candidate_envs()` 的 pyenv 掃描已用 `sys.platform == "win32"` 分支處理。
+
+### 7. .bat 檔案 for 迴圈引號問題
+
+**症狀**：`call "%VAR%"` 出現「檔案名稱語法錯誤」。
+
+**原因**：`for %%C in ("帶引號路徑")` 會讓變數本身包含引號，`call "%VAR%"` 變成雙重引號。
+
+**解法**：for 迴圈內路徑**不加引號**，只在 `if exist "%%C"` 和 `call "%VAR%"` 加：
+
+```bat
+for %%C in (
+    %USERPROFILE%\anaconda3\Scripts\activate.bat
+) do (
+    if exist "%%C" set CONDA_ACTIVATE=%%C
+)
+call "%CONDA_ACTIVATE%" base
+```
+
+---
+
 ## 核心設計原則
 
 - **業務邏輯**放在 `core.py` 或 `src/`，不混入 `tool.py`
 - **`tool.py`** 只負責：定義 metadata、CLI 參數、呼叫核心邏輯、回傳 UI panel
 - **GUI panel** 繼承 `ttk.Frame`，不使用 `tk.Tk`（已是子視窗）
 - **跨平台路徑**使用 `pathlib.Path`，FFmpeg 路徑透過 `core.utils.FFMPEG_CMD` 取得
-- **subprocess 編碼**：所有 `Popen` 必須加 `encoding="utf-8", errors="replace"`，否則非 ASCII 路徑會導致解碼失敗
-- **matplotlib 工具**：加 `matplotlib.use("Agg")` 避免彈出視窗干擾 tkinter
+- **subprocess 編碼**：所有 `Popen` 必須加 `encoding="utf-8", errors="replace"` + `env["PYTHONIOENCODING"]="utf-8"`
+- **matplotlib 工具**：加 `matplotlib.use("Agg")` 避免彈出視窗干擾 tkinter；Windows 需額外設定 `rcParams["animation.ffmpeg_path"]`
 - **執行結果**：顯示在 log 區，不用 `messagebox`
 
 ---

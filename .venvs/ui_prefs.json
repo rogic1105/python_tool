@@ -1,5 +1,5 @@
 {
-  "audio_dehuman.output_dir": "/Users/pc/Downloads",
-  "whisper.output_dir": "/Users/pc/Downloads",
-  "crystal_path.output_dir": "/Users/pc/Downloads"
+  "audio_dehuman.output_dir": "C:/Users/rogic/Downloads",
+  "whisper.output_dir": "C:/Users/rogic/Downloads",
+  "crystal_path.output_dir": "C:/Users/rogic/Downloads"
 }

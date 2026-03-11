@@ -20,7 +20,56 @@ import re
 import shutil
 import argparse
 
+# Force UTF-8 stdout/stderr on Windows. Use reconfigure() to avoid GC closing the buffer.
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 DEMUCS_MODEL = "htdemucs"
+
+
+def _patch_torchaudio_if_needed(torchaudio_mod) -> bool:
+    """
+    torchaudio 2.5+ switched its default save backend to torchcodec.
+    When torchcodec is absent, every torchaudio.save() raises:
+      "TorchCodec is required for save_with_torchcodec."
+
+    This function detects the problem with a cheap dummy save and, if
+    triggered, replaces torchaudio.save with a soundfile-based version
+    that writes WAV files without torchcodec.
+
+    Returns True if the patch was applied, False if no patch was needed.
+    """
+    import torch as _torch
+
+    # Quick probe: try saving 0.1 s of silence into a BytesIO
+    _buf = io.BytesIO()
+    try:
+        torchaudio_mod.save(_buf, _torch.zeros(1, 1600), 16000, format="wav")
+        return False  # works fine — no patch needed
+    except Exception as _e:
+        if "torchcodec" not in str(_e).lower():
+            return False  # different error, don't interfere
+
+    # torchcodec required but missing → apply soundfile fallback
+    try:
+        import soundfile as _sf
+        import numpy as _np
+    except ImportError:
+        # soundfile not installed; warn but don't abort yet — the caller
+        # will catch the torchcodec error and print a clearer message.
+        return False
+
+    def _sf_save(uri, src, sample_rate, *, bits_per_sample=16, **_kwargs):
+        subtype = "PCM_24" if bits_per_sample == 24 else "PCM_16"
+        data = src.cpu().numpy()          # shape: (channels, samples)
+        if data.ndim == 2:
+            data = data.T                 # soundfile wants (samples, channels)
+        _sf.write(str(uri), data, sample_rate, subtype=subtype)
+
+    torchaudio_mod.save = _sf_save
+    print("LOG:torchaudio 儲存後端: soundfile (torchcodec 未安裝，自動切換)", flush=True)
+    return True
 
 
 class _ProgressCapture(io.TextIOBase):
@@ -52,10 +101,19 @@ def main():
 
     try:
         import torch
+        import torchaudio
         import demucs.separate
     except ImportError as e:
         print(f"ERROR:缺少套件: {e}", flush=True)
         sys.exit(1)
+
+    # ── torchaudio save-backend patch ────────────────────────────────────────
+    # torchaudio 2.5+ switched its default save backend to torchcodec.
+    # When torchcodec is not installed every torchaudio.save() call fails.
+    # We detect this at startup and replace torchaudio.save with a
+    # soundfile-based implementation that handles WAV output directly.
+    _patch_applied = _patch_torchaudio_if_needed(torchaudio)
+    # ─────────────────────────────────────────────────────────────────────────
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"LOG:使用裝置: {device}", flush=True)
@@ -79,7 +137,12 @@ def main():
         pass  # demucs.separate.main calls sys.exit(0) on success
     except Exception as e:
         sys.stderr = _orig_stderr
-        print(f"ERROR:{e}", flush=True)
+        err = str(e)
+        if "torchcodec" in err.lower():
+            print("ERROR:torchaudio 儲存後端需要 torchcodec，且 soundfile fallback 也不可用。"
+                  "請在環境中執行: pip install soundfile", flush=True)
+        else:
+            print(f"ERROR:{e}", flush=True)
         sys.exit(1)
     finally:
         sys.stderr = _orig_stderr

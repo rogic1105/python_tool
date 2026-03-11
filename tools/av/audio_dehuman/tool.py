@@ -7,8 +7,23 @@ from pathlib import Path
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 from core.isolated_tool import IsolatedTool
+from core.utils import open_folder
 
 RUNNER = Path(__file__).parent / "runner.py"
+_TOOL_DIR = Path(__file__).parent
+
+
+def _has_nvidia_gpu() -> bool:
+    """Return True if nvidia-smi is found and reports at least one GPU."""
+    import subprocess
+    kwargs = dict(capture_output=True, timeout=5, stdin=subprocess.DEVNULL)
+    if os.name == "nt":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], **kwargs)
+        return r.returncode == 0 and bool(r.stdout.strip())
+    except Exception:
+        return False
 
 
 class AudioDehumanTool(IsolatedTool):
@@ -20,6 +35,24 @@ class AudioDehumanTool(IsolatedTool):
     venv_name = "demucs"
     requirements_file = "requirements.txt"
     check_imports = ["demucs"]
+
+    def _resolve_requirements(self) -> Path:
+        """
+        Pick the right requirements file for the current platform:
+          - macOS        → requirements-mac.txt
+          - Windows+GPU  → requirements-cuda.txt  (CUDA 12.1 torch)
+          - Windows+CPU  → requirements.txt
+        """
+        import sys as _sys
+        if _sys.platform == "darwin":
+            mac_req = _TOOL_DIR / "requirements-mac.txt"
+            if mac_req.exists():
+                return mac_req
+        elif _sys.platform == "win32":
+            cuda_req = _TOOL_DIR / "requirements-cuda.txt"
+            if cuda_req.exists() and _has_nvidia_gpu():
+                return cuda_req
+        return _TOOL_DIR / "requirements.txt"
 
     def add_cli_args(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("input", help="音訊檔案路徑")
@@ -50,7 +83,10 @@ class _DehumanPanel(ttk.Frame):
 
     def _build(self):
         ttk.Label(self, text="人聲去除", font=("", 14, "bold")).pack(pady=(15, 5))
-        ttk.Label(self, text="使用 Demucs htdemucs 分離人聲與伴奏", foreground="gray").pack()
+        gpu_ok = _has_nvidia_gpu()
+        gpu_text = "GPU: NVIDIA ✓（將自動使用 CUDA）" if gpu_ok else "GPU: 未偵測到 NVIDIA GPU，使用 CPU"
+        gpu_color = "#006400" if gpu_ok else "gray"
+        ttk.Label(self, text=gpu_text, foreground=gpu_color, font=("", 9)).pack()
 
         frame_io = ttk.LabelFrame(self, text="輸入設定", padding=10)
         frame_io.pack(fill="x", padx=20, pady=10)
@@ -59,9 +95,11 @@ class _DehumanPanel(ttk.Frame):
         ttk.Label(grid, text="音訊檔案:", width=10).grid(row=0, column=0, sticky="w", pady=4)
         ttk.Entry(grid, textvariable=self.input_var).grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(grid, text="瀏覽", command=self._browse_input).grid(row=0, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.input_var.get())).grid(row=0, column=3, padx=(4, 0))
         ttk.Label(grid, text="輸出目錄:", width=10).grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(grid, textvariable=self.output_var).grid(row=1, column=1, sticky="ew", padx=5)
         ttk.Button(grid, text="瀏覽", command=self._browse_output).grid(row=1, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.output_var.get())).grid(row=1, column=3, padx=(4, 0))
         grid.columnconfigure(1, weight=1)
 
         btn_frame = ttk.Frame(self)
@@ -120,9 +158,12 @@ class _DehumanPanel(ttk.Frame):
 
     def _worker(self, cmd: list):
         try:
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
             self._proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,
+                env=env,
             )
             for raw in self._proc.stdout:
                 line = raw.rstrip()

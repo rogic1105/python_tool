@@ -40,11 +40,152 @@ PREFIX_ERROR    = "ERROR:"
 # ---------------------------------------------------------------------------
 
 def _python_in_dir(d: Path) -> Optional[str]:
-    """Return the python executable path inside a venv/conda directory, or None."""
-    for candidate in (d / "bin" / "python", d / "Scripts" / "python.exe"):
+    """Return the python executable path inside a venv/conda directory, or None.
+
+    Checks (in order):
+      - bin/python          (Mac/Linux venv + conda)
+      - Scripts/python.exe  (Windows venv)
+      - python.exe          (Windows conda: exe sits directly at env root)
+    """
+    for candidate in (
+        d / "bin" / "python",
+        d / "Scripts" / "python.exe",
+        d / "python.exe",
+    ):
         if candidate.exists():
             return str(candidate)
     return None
+
+
+def _find_conda_exe() -> str:
+    """Return path to conda executable. Falls back to 'conda' (assumes PATH)."""
+    import shutil
+    found = shutil.which("conda")
+    if found:
+        return found
+
+    if sys.platform == "win32":
+        user = os.environ.get("USERPROFILE", "")
+        local = os.environ.get("LOCALAPPDATA", "")
+        program_data = os.environ.get("ProgramData", "")
+        candidates = []
+        for base in [user, local]:
+            if base:
+                candidates += [
+                    os.path.join(base, "miniconda3", "Scripts", "conda.exe"),
+                    os.path.join(base, "anaconda3", "Scripts", "conda.exe"),
+                ]
+        if program_data:
+            candidates += [
+                os.path.join(program_data, "miniconda3", "Scripts", "conda.exe"),
+                os.path.join(program_data, "anaconda3", "Scripts", "conda.exe"),
+            ]
+        candidates += [
+            r"C:\miniconda3\Scripts\conda.exe",
+            r"C:\anaconda3\Scripts\conda.exe",
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+
+    return "conda"  # hope it's in PATH
+
+
+def _parse_conda_env_list(conda_exe: str) -> List[tuple]:
+    """
+    Return (name, path) pairs for all known conda environments.
+
+    On Windows, conda.BAT goes through cmd.exe which manipulates the console
+    handles and can corrupt the parent process's sys.stdout.  Use filesystem
+    scanning instead so no subprocess is needed.
+    On Mac/Linux, run `conda env list` as usual.
+    """
+    if sys.platform == "win32":
+        return _scan_conda_envs_fs(conda_exe)
+    return _run_conda_env_list(conda_exe)
+
+
+def _run_conda_env_list(conda_exe: str) -> List[tuple]:
+    """Run `conda env list` and parse text output (Mac/Linux only)."""
+    try:
+        r = subprocess.run(
+            [conda_exe, "env", "list"],
+            capture_output=True, text=True, timeout=15,
+            encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL,
+        )
+    except Exception:
+        return []
+
+    results = []
+    seen_paths = set()
+    for line in r.stdout.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        line = line.replace("*", " ")
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        env_name = parts[0]
+        env_path = parts[-1]
+        norm = env_path.lower()
+        if norm in seen_paths:
+            continue
+        seen_paths.add(norm)
+        results.append((env_name, env_path))
+    return results
+
+
+def _scan_conda_envs_fs(conda_exe: str) -> List[tuple]:
+    """
+    Discover conda environments via filesystem scan — no subprocess needed.
+
+    Sources (in order):
+      1. conda root  (base env)  — derived from conda_exe path
+      2. <conda_root>/envs/      — named environments
+      3. ~/.conda/environments.txt — any extra registered envs
+    """
+    results: List[tuple] = []
+    seen: set = set()
+
+    def _add(name: str, path: str) -> None:
+        key = path.lower()
+        if key not in seen and Path(path).exists():
+            seen.add(key)
+            results.append((name, path))
+
+    # Derive conda root: .../anaconda3/condabin/conda.BAT  →  .../anaconda3
+    #                    .../anaconda3/Scripts/conda.exe   →  .../anaconda3
+    conda_root = Path(conda_exe).resolve().parent.parent
+
+    # 1. base
+    if _python_in_dir(conda_root):
+        _add("base", str(conda_root))
+
+    # 2. named envs
+    envs_dir = conda_root / "envs"
+    if envs_dir.exists():
+        for d in sorted(envs_dir.iterdir()):
+            if d.is_dir() and _python_in_dir(d):
+                _add(d.name, str(d))
+
+    # 3. environments.txt for any extra registered locations
+    env_txt = Path.home() / ".conda" / "environments.txt"
+    if env_txt.exists():
+        try:
+            lines = env_txt.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            lines = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            p = Path(line)
+            name = p.name if p.name else "base"
+            if _python_in_dir(p):
+                _add(name, line)
+
+    return results
 
 
 def _verify_imports(python: str, import_names: List[str], timeout: int = 10) -> bool:
@@ -92,22 +233,15 @@ def scan_candidate_envs(sources: Optional[List[str]] = None) -> List[dict]:
 
     # 1. Current running Python
     if want("current"):
-        add(f"目前環境 ({_python_label(sys.executable)})", sys.executable, "current")
+        add(f"[current] {_python_label(sys.executable):<20} {sys.executable}", sys.executable, "current")
 
     # 2. Conda environments
     if want("conda"):
-        try:
-            r = subprocess.run(
-                ["conda", "env", "list", "--json"],
-                capture_output=True, text=True, timeout=10,
-            )
-            for env_path in json.loads(r.stdout).get("envs", []):
-                p = _python_in_dir(Path(env_path))
-                if p:
-                    env_name = Path(env_path).name or "base"
-                    add(f"conda: {env_name}  ({env_path})", p, "conda")
-        except Exception:
-            pass
+        conda_exe = _find_conda_exe()
+        for env_name, env_path in _parse_conda_env_list(conda_exe):
+            p = _python_in_dir(Path(env_path))
+            if p:
+                add(f"[conda] {env_name:<20} {env_path}", p, "conda")
 
     # 3. Our managed .venvs/<name>/ directories
     if want("managed") and VENVS_DIR.exists():
@@ -115,7 +249,7 @@ def scan_candidate_envs(sources: Optional[List[str]] = None) -> List[dict]:
             if d.is_dir():
                 p = _python_in_dir(d)
                 if p:
-                    add(f"managed: {d.name}  ({d})", p, "managed")
+                    add(f"[managed] {d.name:<20} {d}", p, "managed")
 
     # 4. Common venv names in project root and home
     if want("local"):
@@ -124,17 +258,38 @@ def scan_candidate_envs(sources: Optional[List[str]] = None) -> List[dict]:
                 d = base / name
                 p = _python_in_dir(d)
                 if p:
-                    add(f"venv: {d}", p, "local")
+                    add(f"[venv]    {d.name:<20} {d}", p, "local")
 
     # 5. pyenv versions
     if want("pyenv"):
-        pyenv_root = Path(os.environ.get("PYENV_ROOT", Path.home() / ".pyenv"))
-        versions_dir = pyenv_root / "versions"
+        if sys.platform == "win32":
+            # pyenv-win stores versions at ~/.pyenv/pyenv-win/versions/
+            user_home = Path.home()
+            pyenv_root_env = os.environ.get("PYENV_ROOT", "")
+            if pyenv_root_env:
+                versions_dir = Path(pyenv_root_env) / "versions"
+            else:
+                versions_dir = user_home / ".pyenv" / "pyenv-win" / "versions"
+        else:
+            pyenv_root = Path(os.environ.get("PYENV_ROOT", Path.home() / ".pyenv"))
+            versions_dir = pyenv_root / "versions"
+
         if versions_dir.exists():
             for ver in sorted(versions_dir.iterdir()):
                 p = _python_in_dir(ver)
                 if p:
-                    add(f"pyenv: {ver.name}", p, "pyenv")
+                    add(f"[pyenv]   {ver.name:<20} {ver}", p, "pyenv")
+
+    # 6. Windows: standard Python installer locations (%LOCALAPPDATA%\Programs\Python\)
+    if want("win_system") and sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA", "")
+        if local:
+            py_base = Path(local) / "Programs" / "Python"
+            if py_base.exists():
+                for ver_dir in sorted(py_base.iterdir(), reverse=True):
+                    exe = ver_dir / "python.exe"
+                    if exe.exists():
+                        add(f"[python]  {ver_dir.name:<20} {exe}", str(exe), "win_system")
 
     return candidates
 
@@ -276,8 +431,6 @@ class IsolatedTool(BaseTool):
 
         env_name: conda environment name (defaults to "<venv_name>-env")
         """
-        import json as _json
-
         if not env_name:
             env_name = f"{self.venv_name}-env"
 
@@ -296,23 +449,20 @@ class IsolatedTool(BaseTool):
             if proc.returncode != 0:
                 raise RuntimeError(f"指令失敗 (exit {proc.returncode}): {' '.join(cmd)}")
 
+        conda_exe = _find_conda_exe()
         log_cb(f"[conda] 建立環境: {env_name}  (python={python_version})")
-        _stream(["conda", "create", "-n", env_name, f"python={python_version}", "-y"])
+        _stream([conda_exe, "create", "-n", env_name, f"python={python_version}", "-y"])
 
         log_cb(f"[conda] 安裝套件 ({req_path.name})...")
-        _stream(["conda", "run", "--no-capture-output", "-n", env_name,
+        _stream([conda_exe, "run", "--no-capture-output", "-n", env_name,
                  "pip", "install", "-r", str(req_path)])
 
         # Locate the new env's python
         log_cb("[conda] 尋找新環境路徑...")
-        r = subprocess.run(
-            ["conda", "env", "list", "--json"],
-            capture_output=True, text=True, timeout=15,
-        )
         python_path = None
-        for env_path in _json.loads(r.stdout).get("envs", []):
-            if Path(env_path).name == env_name:
-                p = _python_in_dir(Path(env_path))
+        for name, path in _parse_conda_env_list(conda_exe):
+            if name == env_name:
+                p = _python_in_dir(Path(path))
                 if p:
                     python_path = p
                     break

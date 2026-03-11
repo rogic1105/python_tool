@@ -12,6 +12,7 @@ from pathlib import Path
 from tkinter import ttk, filedialog, scrolledtext, messagebox
 
 from .config import DEFAULT_OUTPUT_DIR
+from core.utils import open_folder
 
 RUNNER = Path(__file__).parent.parent / "runner.py"
 
@@ -44,9 +45,11 @@ class WhisperPanel(ttk.Frame):
         ttk.Label(grid, text="輸入音檔:", width=10).grid(row=0, column=0, sticky="w", pady=3)
         ttk.Entry(grid, textvariable=self.file_path, state="readonly").grid(row=0, column=1, sticky="ew", padx=5)
         ttk.Button(grid, text="選擇檔案", command=self._browse_file).grid(row=0, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.file_path.get())).grid(row=0, column=3, padx=(4, 0))
         ttk.Label(grid, text="輸出目錄:", width=10).grid(row=1, column=0, sticky="w", pady=3)
         ttk.Entry(grid, textvariable=self.output_path).grid(row=1, column=1, sticky="ew", padx=5)
         ttk.Button(grid, text="變更目錄", command=self._browse_output).grid(row=1, column=2)
+        ttk.Button(grid, text="開啟", command=lambda: open_folder(self.output_path.get())).grid(row=1, column=3, padx=(4, 0))
         grid.columnconfigure(1, weight=1)
 
         # 2. 參數設定
@@ -157,9 +160,12 @@ class WhisperPanel(ttk.Frame):
 
     def _worker(self, cmd: list):
         try:
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
             self._proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", bufsize=1,
+                env=env,
             )
             for raw in self._proc.stdout:
                 line = raw.rstrip()

@@ -1,4 +1,6 @@
 {
-  "demucs": "/opt/homebrew/Caskroom/miniconda/base/envs/demucs-env/bin/python",
-  "whisper": "/opt/homebrew/Caskroom/miniconda/base/envs/whisper-env/bin/python"
+  "demucs": "C:\\Users\\rogic\\anaconda3\\envs\\demucs-env\\python.exe",
+  "whisper": "C:\\Users\\rogic\\anaconda3\\envs\\whisper-env\\python.exe",
+  "crystal_path": "C:\\Users\\rogic\\anaconda3\\python.exe",
+  "invoice_helper": "C:\\Users\\rogic\\anaconda3\\python.exe"
 }

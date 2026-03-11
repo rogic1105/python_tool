@@ -1,11 +1,18 @@
 import os
 import matplotlib
 matplotlib.use("Agg")  # non-interactive backend — no window, no tkinter conflict
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, FFMpegWriter
 from matplotlib.collections import LineCollection
 from matplotlib.colors import hsv_to_rgb
+import numpy as np
+
+# Ensure matplotlib can find ffmpeg on all platforms (especially Windows)
+try:
+    from core.utils import FFMPEG_CMD
+    matplotlib.rcParams["animation.ffmpeg_path"] = FFMPEG_CMD
+except Exception:
+    pass
 
 
 def generate_crystal_path_animation(output_dir: str = ".", log_cb=print) -> str:

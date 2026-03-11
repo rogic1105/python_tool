@@ -79,6 +79,24 @@ def check_ffmpeg() -> None:
         )
 
 
+def open_folder(path: str) -> None:
+    """Open a folder in the OS file manager (cross-platform).
+    If path is a file, opens its parent directory.
+    Does nothing if the path is empty or does not exist.
+    """
+    p = Path(str(path).strip())
+    if not path or not p.exists():
+        return
+    if p.is_file():
+        p = p.parent
+    if SYSTEM == "Windows":
+        os.startfile(str(p))
+    elif SYSTEM == "Darwin":
+        subprocess.run(["open", str(p)])
+    else:
+        subprocess.run(["xdg-open", str(p)])
+
+
 def get_best_h264_codec() -> tuple:
     """Return (codec, extra_args_list) based on available hardware."""
     if SYSTEM == "Darwin":

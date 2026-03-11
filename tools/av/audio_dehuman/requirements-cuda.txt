@@ -1,0 +1,6 @@
+# Windows — NVIDIA GPU (CUDA 12.8)
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch
+torchaudio
+demucs==4.0.1
+soundfile
