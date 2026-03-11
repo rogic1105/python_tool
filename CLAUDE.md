@@ -21,8 +21,10 @@ python_tool/
     │   └── get_frames/     # 擷取首尾幀
     ├── divination/     # 占卜工具
     │   └── crystal_path/   # 水晶路徑動畫
-    └── data/           # 資料整理工具
-        └── invoice_helper/ # 發票湊數（子集合加總）
+    ├── data/           # 資料整理工具
+    │   └── invoice_helper/ # 發票湊數（子集合加總）
+    └── system/         # 系統工具
+        └── env_manager/    # conda 環境管理（列出／移除）
 ```
 
 持久化設定存放位置：
@@ -74,6 +76,7 @@ CATEGORY_LABELS = {
     "av":         "影音工具",
     "divination": "占卜工具",
     "data":       "資料整理",
+    "system":     "系統工具",
     "new_cat":    "新類別名稱",   # 新增這行
 }
 ```
@@ -121,19 +124,49 @@ class MyTool(IsolatedTool):
 
 2. 建立 `requirements.txt`（套件清單）
 
+   若工具在不同平台需要不同套件（如 CUDA vs CPU），可覆寫 `_resolve_requirements()`：
+
+   ```python
+   def _resolve_requirements(self) -> Path:
+       import sys as _sys
+       if _sys.platform == "darwin":
+           mac_req = _TOOL_DIR / "requirements-mac.txt"
+           if mac_req.exists():
+               return mac_req
+       elif _sys.platform == "win32":
+           cuda_req = _TOOL_DIR / "requirements-cuda.txt"
+           if cuda_req.exists() and _has_nvidia_gpu():
+               return cuda_req
+       return _TOOL_DIR / "requirements.txt"
+   ```
+
+   requirements 檔案命名慣例：
+   - `requirements.txt` — Windows CPU（預設 fallback）
+   - `requirements-cuda.txt` — Windows GPU（CUDA）
+   - `requirements-mac.txt` — macOS
+
 3. 建立 `runner.py`（**獨立腳本**，不 import 任何 core/ 或 tools/）：
 
-```python
-# runner.py — 在隔離環境中執行，使用 stdout 協定回傳狀態
-import sys, os
+   > **⚠️ Windows 編碼注意**：runner.py 開頭必須用 `reconfigure()`，**不可用** `io.TextIOWrapper` 替換 sys.stdout。
+   > 替換 wrapper 會在 GC 時關閉底層 buffer，導致後續 `print()` 全部拋出 `ValueError: I/O operation on closed file`。
+   > 此問題僅在 Windows 發生（macOS 預設 UTF-8，不需要這段）。
 
-# 輸出協定（IsolatedTool / GUI 自動解析）：
-print("LOG:開始處理...", flush=True)
-print("PROGRESS:1,50,", flush=True)   # stage, 0-100, msg
-print("TEXT:轉錄的文字", flush=True)
-print("DONE:/path/to/output", flush=True)
-print("ERROR:錯誤訊息", flush=True)
-```
+   ```python
+   # runner.py — 在隔離環境中執行，使用 stdout 協定回傳狀態
+   import sys, os
+
+   # Windows 編碼修正（macOS 不需要）
+   if sys.platform == "win32":
+       sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+       sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+   # 輸出協定（IsolatedTool / GUI 自動解析）：
+   print("LOG:開始處理...", flush=True)
+   print("PROGRESS:1,50,", flush=True)   # stage, 0-100, msg
+   print("TEXT:轉錄的文字", flush=True)
+   print("DONE:/path/to/output", flush=True)
+   print("ERROR:錯誤訊息", flush=True)
+   ```
 
 4. GUI panel 中執行時，使用 **`self.tool.active_python`**（而非 `venv_python`）：
 
@@ -217,28 +250,30 @@ Key 命名慣例：`"<tool_name>.<setting>"`
 
 新增 Windows 功能時必須注意，以下是實際踩過的坑：
 
-### 1. subprocess 中文亂碼 / cp950 編碼錯誤
+### 1. subprocess 中文亂碼 / cp950 編碼錯誤（Windows 專屬）
 
 **症狀**：`'cp950' codec can't encode character` 或 log 顯示亂碼。
 
-**原因**：Windows Python 預設 stdout 為 cp950（Big5），中文字元超出範圍就崩潰。
+**原因**：Windows Python 預設 stdout 為 cp950（Big5），中文字元超出範圍就崩潰。macOS 預設 UTF-8，不會發生。
 
 **解法**（兩層都要做）：
 
 ```python
-# (A) 呼叫端 Popen 加環境變數
+# (A) 呼叫端 Popen 加環境變數（呼叫所有 runner.py 時都要加）
 env = os.environ.copy()
 env["PYTHONIOENCODING"] = "utf-8"
 proc = subprocess.Popen(cmd, ..., encoding="utf-8", errors="replace", env=env)
 
-# (B) runner.py 開頭強制覆寫 stdout（Windows only）
-import sys, io
-if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+# (B) runner.py 開頭用 reconfigure()（Windows 專屬，macOS 不需要）
+# ⚠️ 絕對不能用 io.TextIOWrapper 替換 sys.stdout！
+# 替換後舊的 wrapper 被 GC 時會關掉底層 buffer，導致之後所有 print() 崩潰。
+import sys
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 ```
 
-### 2. conda 不在 PATH（Windows）
+### 2. conda 不在 PATH（Windows 專屬）
 
 **症狀**：`conda env list` 找不到命令，環境掃描失敗。
 
@@ -247,7 +282,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 **解法**：使用 `core/isolated_tool.py` 的 `_find_conda_exe()`，會掃描常見安裝位置：
 `%USERPROFILE%\anaconda3\Scripts\conda.exe` 等。
 
-### 3. conda env list --json 沒有環境名稱
+### 3. conda env list --json 沒有環境名稱（Windows 專屬）
 
 **症狀**：環境列表只顯示路徑，base 環境標成 `anaconda3`。
 
@@ -260,7 +295,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 # 在 core/isolated_tool.py 已實作
 ```
 
-### 4. conda Python 位置與 venv 不同（Windows）
+### 4. conda Python 位置與 venv 不同（Windows 專屬）
 
 **症狀**：掃描到 conda 環境但找不到 python.exe，顯示為空。
 
@@ -274,7 +309,7 @@ d / "Scripts" / "python.exe"  # Windows venv
 d / "python.exe"           # Windows conda (根目錄)
 ```
 
-### 5. matplotlib FFMpegWriter 找不到 ffmpeg（Windows）
+### 5. matplotlib FFMpegWriter 找不到 ffmpeg（Windows 專屬）
 
 **症狀**：`[WinError 2] 系統找不到指定的檔案`。
 
@@ -287,13 +322,27 @@ from core.utils import FFMPEG_CMD
 matplotlib.rcParams["animation.ffmpeg_path"] = FFMPEG_CMD
 ```
 
-### 6. pyenv 路徑差異（Windows）
+### 6. pyenv 路徑差異（Windows 專屬）
 
 **原因**：pyenv-win 安裝在 `~/.pyenv/pyenv-win/versions/`，不是 Mac 的 `~/.pyenv/versions/`。
 
 **解法**：`scan_candidate_envs()` 的 pyenv 掃描已用 `sys.platform == "win32"` 分支處理。
 
-### 7. .bat 檔案 for 迴圈引號問題
+### 7. conda subprocess 污染父程序 stdout（Windows 專屬）
+
+**症狀**：呼叫 `conda env list` 之後，主程式的 `print()` 全部停止輸出或 log 區空白。
+
+**原因**：conda.BAT 透過 cmd.exe 執行，cmd.exe 會操作 console handle，導致父程序的 stdout 被破壞。macOS 的 conda 是 shell script，不會發生此問題。
+
+**解法**：**完全不呼叫 conda subprocess**。改用 filesystem 直接掃描：
+- 從 conda.exe 路徑推算 conda root（`conda.exe` 所在的 `Scripts/` 的上層目錄）
+- 讀取 conda root 的 `envs/` 子目錄列出所有環境
+- 補充讀取 `~/.conda/environments.txt`（跨 root 安裝的環境）
+
+已實作於 `core/isolated_tool.py` 的 `_scan_conda_envs_fs()`；
+`_parse_conda_env_list()` 在 Windows 自動呼叫 fs 版本，macOS/Linux 維持原本的 subprocess 版本。
+
+### 8. .bat 檔案 for 迴圈引號問題（Windows 專屬）
 
 **症狀**：`call "%VAR%"` 出現「檔案名稱語法錯誤」。
 
@@ -321,6 +370,7 @@ call "%CONDA_ACTIVATE%" base
 - **subprocess 編碼**：所有 `Popen` 必須加 `encoding="utf-8", errors="replace"` + `env["PYTHONIOENCODING"]="utf-8"`
 - **matplotlib 工具**：加 `matplotlib.use("Agg")` 避免彈出視窗干擾 tkinter；Windows 需額外設定 `rcParams["animation.ffmpeg_path"]`
 - **執行結果**：顯示在 log 區，不用 `messagebox`
+- **開啟資料夾/檔案**：使用 `core.utils.open_folder(path)`，跨平台（Windows: `os.startfile`，macOS: `open`，Linux: `xdg-open`）；若 path 是檔案則自動開啟其所在目錄；每個輸入/輸出欄位旁都應提供「開啟」按鈕
 
 ---
 
