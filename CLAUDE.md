@@ -15,7 +15,6 @@ python_tool/
 └── tools/              # 所有工具（按類別分層）
     ├── av/             # 影音工具
     │   ├── whisper/        # 語音轉錄 + 語者分離（faster-whisper + KMeans）
-    │   ├── whisperx/       # 高精度語音轉錄（whisperx + word-level 對齊 + pyannote 語者分離）
     │   ├── mp4_to_mp3/     # 影片轉 MP3
     │   ├── video_to_h264/  # 影片轉 H.264（自動選 codec）
     │   ├── audio_dehuman/  # Demucs 人聲去除

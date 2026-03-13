@@ -1,5 +1,6 @@
 {
   "audio_dehuman.output_dir": "C:/Users/rogic/Downloads",
   "whisper.output_dir": "C:/Users/rogic/Downloads",
-  "crystal_path.output_dir": "C:/Users/rogic/Downloads"
+  "crystal_path.output_dir": "C:/Users/rogic/Downloads",
+  "whisperx.hf_token": ""
 }
