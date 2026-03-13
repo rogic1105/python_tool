@@ -135,6 +135,28 @@ def build_chunks(win_times: List[Tuple[float, float]], labels, max_sec: int = 30
     return chunks
 
 
+def _build_align_context(win_times, labels):
+    """Pre-compute shared data for alignment (used by both align variants)."""
+    diar_simple = [{"start": st, "end": ed, "label": lb}
+                   for (st, ed), lb in zip(win_times, labels)]
+    uniq = sorted(set(labels))
+    to_name = {lab: f"S{idx+1}" for idx, lab in enumerate(uniq)}
+    return diar_simple, to_name
+
+
+def _best_speaker(seg: WhisperSegment, diar_simple: list, to_name: dict) -> str:
+    best_lb, best_ov = None, 0.0
+    for d in diar_simple:
+        ov = max(0.0, min(seg.end, d["end"]) - max(seg.start, d["start"]))
+        if ov > best_ov:
+            best_ov, best_lb = ov, d["label"]
+    if best_lb is None:
+        mid = (seg.start + seg.end) / 2
+        nearest = min(diar_simple, key=lambda x: abs((x["start"] + x["end"]) / 2 - mid))
+        best_lb = nearest["label"]
+    return to_name[best_lb]
+
+
 def align_segments(
     whisper_segs: List[WhisperSegment],
     win_times: List[Tuple[float, float]],
@@ -142,21 +164,21 @@ def align_segments(
 ) -> List[LabeledSegment]:
     if not win_times:
         return [LabeledSegment(s.start, s.end, s.text, "Unknown") for s in whisper_segs]
+    diar_simple, to_name = _build_align_context(win_times, labels)
+    return [LabeledSegment(s.start, s.end, s.text, _best_speaker(s, diar_simple, to_name))
+            for s in whisper_segs]
 
-    diar_simple = [{"start": st, "end": ed, "label": lb} for (st, ed), lb in zip(win_times, labels)]
-    uniq = sorted(set(labels))
-    to_name = {lab: f"S{idx+1}" for idx, lab in enumerate(uniq)}
 
-    results = []
-    for seg in whisper_segs:
-        best_lb, best_ov = None, 0.0
-        for d in diar_simple:
-            ov = max(0.0, min(seg.end, d["end"]) - max(seg.start, d["start"]))
-            if ov > best_ov:
-                best_ov, best_lb = ov, d["label"]
-        if best_lb is None:
-            mid = (seg.start + seg.end) / 2
-            nearest = min(diar_simple, key=lambda x: abs((x["start"] + x["end"]) / 2 - mid))
-            best_lb = nearest["label"]
-        results.append(LabeledSegment(seg.start, seg.end, seg.text, to_name[best_lb]))
-    return results
+def align_segments_stream(
+    whisper_segs: List[WhisperSegment],
+    win_times: List[Tuple[float, float]],
+    labels,
+):
+    """Generator version: yields one LabeledSegment at a time for streaming writes."""
+    if not win_times:
+        for s in whisper_segs:
+            yield LabeledSegment(s.start, s.end, s.text, "Unknown")
+        return
+    diar_simple, to_name = _build_align_context(win_times, labels)
+    for s in whisper_segs:
+        yield LabeledSegment(s.start, s.end, s.text, _best_speaker(s, diar_simple, to_name))

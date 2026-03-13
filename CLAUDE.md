@@ -370,7 +370,47 @@ matplotlib.rcParams["animation.ffmpeg_path"] = FFMPEG_CMD
 已實作於 `core/isolated_tool.py` 的 `_scan_conda_envs_fs()`；
 `_parse_conda_env_list()` 在 Windows 自動呼叫 fs 版本，macOS/Linux 維持原本的 subprocess 版本。
 
-### 8. .bat 檔案 for 迴圈引號問題（Windows 專屬）
+### 8. faster-whisper `del model` 在 CUDA 上卡死（Windows 專屬）
+
+**症狀**：長音訊（>30 分鐘）轉錄完成後，日誌停在「釋放模型記憶體...」，後續對齊和寫檔步驟完全不執行。
+
+**原因**：CTranslate2 在 Windows CUDA 環境中，顯式 `del model` 有時觸發 CUDA context cleanup deadlock。
+
+**解法**：**不要顯式 `del model`**，直接讓 subprocess 退出時由 OS 自動回收 GPU 記憶體：
+
+```python
+# ❌ 會卡死
+del model
+
+# ✅ 正確：不需要 del，subprocess 結束 OS 自動清理
+# （直接進行下一步）
+```
+
+### 9. faster-whisper VAD 過濾掉歌聲（通用）
+
+**症狀**：轉錄歌曲時只輸出前 1 分鐘，後面全部漏掉。
+
+**原因**：Silero VAD 預設 `threshold=0.5`，歌聲信心分數約 0.1–0.3，被全部過濾。
+
+**解法**：降低 VAD threshold，並增加 padding：
+
+```python
+segs, info = model.transcribe(
+    wav_path, language=lang, beam_size=5,
+    vad_filter=True,
+    vad_parameters={
+        "threshold": 0.05,           # 預設 0.5 太嚴，歌聲需要 0.05
+        "min_silence_duration_ms": 500,
+        "speech_pad_ms": 800,
+    },
+    condition_on_previous_text=False,  # False 防止幻覺傳播
+    initial_prompt="以下是普通話語音。",   # 中文提示防止混入英文
+)
+```
+
+**注意**：`vad_filter=False` 雖然覆蓋率最高，但會對純音樂段產生大量幻覺輸出，不建議使用。
+
+### 10. .bat 檔案 for 迴圈引號問題（Windows 專屬）
 
 **症狀**：`call "%VAR%"` 出現「檔案名稱語法錯誤」。
 

@@ -38,8 +38,11 @@ def progress_cb(stage: int, val: float, msg: str = None):
     print(f"PROGRESS:{stage},{val},{msg or ''}", flush=True)
 
 
-def transcript_cb(text: str):
-    print(f"TEXT:{text}", flush=True)
+def transcript_cb(text):
+    if text is None:
+        print("CLEAR_CONTENT:", flush=True)
+    else:
+        print(f"TEXT:{text}", flush=True)
 
 
 def main():

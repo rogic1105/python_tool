@@ -16,6 +16,10 @@ from core.utils import open_folder
 
 RUNNER = Path(__file__).parent.parent / "runner.py"
 
+_STYLE_GRAY   = "Whisper.Gray.Horizontal.TProgressbar"
+_STYLE_YELLOW = "Whisper.Yellow.Horizontal.TProgressbar"
+_STYLE_GREEN  = "Whisper.Green.Horizontal.TProgressbar"
+
 
 class WhisperPanel(ttk.Frame):
     def __init__(self, parent, tool):
@@ -31,7 +35,14 @@ class WhisperPanel(ttk.Frame):
         self.language = tk.StringVar(value="zh")
         self.num_speakers = tk.IntVar(value=0)
 
+        self._init_styles()
         self._build_ui()
+
+    def _init_styles(self):
+        s = ttk.Style(self)
+        s.configure(_STYLE_GRAY,   background="#aaaaaa", troughcolor="#e0e0e0")
+        s.configure(_STYLE_YELLOW, background="#e8c020", troughcolor="#e0e0e0")
+        s.configure(_STYLE_GREEN,  background="#22aa44", troughcolor="#e0e0e0")
 
     def _build_ui(self):
         top = ttk.Frame(self)
@@ -79,15 +90,15 @@ class WhisperPanel(ttk.Frame):
         frame_prog.pack(fill="x", padx=10, pady=3)
         self.lbl_p1 = ttk.Label(frame_prog, text="步驟 1: 格式轉換", foreground="gray")
         self.lbl_p1.pack(anchor="w")
-        self.bar_p1 = ttk.Progressbar(frame_prog, orient="horizontal", mode="determinate")
+        self.bar_p1 = ttk.Progressbar(frame_prog, style=_STYLE_GRAY, orient="horizontal", mode="determinate")
         self.bar_p1.pack(fill="x", pady=(0, 3))
         self.lbl_p2 = ttk.Label(frame_prog, text="步驟 2: 語者分析", foreground="gray")
         self.lbl_p2.pack(anchor="w")
-        self.bar_p2 = ttk.Progressbar(frame_prog, orient="horizontal", mode="determinate")
+        self.bar_p2 = ttk.Progressbar(frame_prog, style=_STYLE_GRAY, orient="horizontal", mode="determinate")
         self.bar_p2.pack(fill="x", pady=(0, 3))
         self.lbl_p3 = ttk.Label(frame_prog, text="步驟 3: 語音轉錄", foreground="gray")
         self.lbl_p3.pack(anchor="w")
-        self.bar_p3 = ttk.Progressbar(frame_prog, orient="horizontal", mode="determinate")
+        self.bar_p3 = ttk.Progressbar(frame_prog, style=_STYLE_GRAY, orient="horizontal", mode="determinate")
         self.bar_p3.pack(fill="x")
 
         # 輸出區
@@ -122,9 +133,8 @@ class WhisperPanel(ttk.Frame):
 
     def _cancel(self):
         if self._proc and self._proc.poll() is None:
-            if messagebox.askyesno("取消", "確定要終止任務嗎？"):
-                self._proc.terminate()
-                self.btn_cancel.config(state="disabled")
+            self._proc.terminate()
+            self.btn_cancel.config(state="disabled")
 
     def _start(self):
         f = self.file_path.get()
@@ -180,6 +190,8 @@ class WhisperPanel(ttk.Frame):
                         self.after(0, self._update_progress, stage, val, msg)
                     except (ValueError, IndexError):
                         pass
+                elif line == "CLEAR_CONTENT:":
+                    self.after(0, self._clear_content)
                 elif line.startswith("TEXT:"):
                     self._log_content(line[5:])
                 elif line.startswith("DONE:"):
@@ -188,7 +200,6 @@ class WhisperPanel(ttk.Frame):
                 elif line.startswith("ERROR:"):
                     self._log_sys(f"[錯誤] {line[6:]}")
                 else:
-                    # Fallback: show raw output in log
                     if line:
                         self._log_sys(line)
 
@@ -207,7 +218,13 @@ class WhisperPanel(ttk.Frame):
     def _on_done(self, srt: str):
         self.is_running = False
         self._reset_buttons()
-        messagebox.showinfo("完成", f"處理完畢！\n{srt}")
+        srt = srt.strip()
+        folder = os.path.dirname(srt) if srt else self.output_path.get()
+        if srt and os.path.exists(srt):
+            self._log_sys(f"✓ 檔案已生成: {srt}")
+            open_folder(folder)
+        else:
+            self._log_sys(f"⚠ 找不到輸出檔案: {srt}")
 
     def _reset_buttons(self):
         self.btn_run.config(state="normal")
@@ -221,6 +238,11 @@ class WhisperPanel(ttk.Frame):
             self.txt_sys.config(state="disabled"),
         ])
 
+    def _clear_content(self):
+        self.txt_content.config(state="normal")
+        self.txt_content.delete(1.0, "end")
+        self.txt_content.config(state="disabled")
+
     def _log_content(self, text: str):
         self.after(0, lambda: [
             self.txt_content.config(state="normal"),
@@ -230,19 +252,20 @@ class WhisperPanel(ttk.Frame):
         ])
 
     def _update_progress(self, stage: int, val: float, msg: str = None):
-        color = "green" if val >= 100 else "blue"
+        bar_style = _STYLE_GREEN if val >= 100 else _STYLE_YELLOW
+        lbl_color = "#22aa44" if val >= 100 else "#c08000"
         if stage == 1:
-            self.bar_p1["value"] = val
-            self.lbl_p1.config(foreground=color)
+            self.bar_p1.configure(style=bar_style, value=val)
+            self.lbl_p1.config(foreground=lbl_color)
         elif stage == 2:
-            self.bar_p2["value"] = val
-            self.lbl_p2.config(foreground=color)
+            self.bar_p2.configure(style=bar_style, value=val)
+            self.lbl_p2.config(foreground=lbl_color)
         elif stage == 3:
-            self.bar_p3["value"] = val
+            self.bar_p3.configure(style=bar_style, value=val)
             lbl_text = f"步驟 3: 語音轉錄 ({int(val)}%)"
             if msg:
                 lbl_text += f" - {msg}"
-            self.lbl_p3.config(text=lbl_text, foreground=color)
+            self.lbl_p3.config(text=lbl_text, foreground=lbl_color)
 
     def _reset_ui(self):
         for bar, lbl, text in [
@@ -250,7 +273,7 @@ class WhisperPanel(ttk.Frame):
             (self.bar_p2, self.lbl_p2, "步驟 2: 語者分析"),
             (self.bar_p3, self.lbl_p3, "步驟 3: 語音轉錄"),
         ]:
-            bar["value"] = 0
+            bar.configure(style=_STYLE_GRAY, value=0)
             lbl.config(foreground="gray", text=text)
         for txt in (self.txt_sys, self.txt_content):
             txt.config(state="normal")
