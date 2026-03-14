@@ -109,73 +109,63 @@ class _AudioClipperPanel(ttk.Frame):
         ttk.Label(self, text="音檔剪裁", font=("", 14, "bold")).pack(pady=(15, 2))
         ttk.Label(self, text="播放音檔，標記範圍，擷取片段輸出", foreground="gray").pack(pady=(0, 10))
 
-        # ── 音檔 ──
-        ff = ttk.LabelFrame(self, text="音檔", padding=8)
-        ff.pack(fill="x", padx=20, pady=(0, 8))
-        frow = ttk.Frame(ff)
-        frow.pack(fill="x")
+        # ── 輸入 + 輸出（同一框）──
+        io = ttk.LabelFrame(self, text="輸入 / 輸出", padding=8)
+        io.pack(fill="x", padx=20, pady=(0, 8))
+
+        frow = ttk.Frame(io)
+        frow.pack(fill="x", pady=(0, 4))
+        ttk.Label(frow, text="音檔:", width=5).pack(side="left")
         self.file_var = tk.StringVar()
         ttk.Entry(frow, textvariable=self.file_var).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        ttk.Button(frow, text="開啟檔案", command=self._browse_file).pack(side="left")
+        ttk.Button(frow, text="開啟", command=self._browse_file).pack(side="left")
         ttk.Button(frow, text="📂", command=lambda: open_folder(self.file_var.get())).pack(side="left", padx=(4, 0))
 
-        # ── 播放器 ──
+        orow = ttk.Frame(io)
+        orow.pack(fill="x")
+        ttk.Label(orow, text="輸出:", width=5).pack(side="left")
+        self.out_var = tk.StringVar(value=load_pref(self._PREF_OUT, os.getcwd()))
+        ttk.Entry(orow, textvariable=self.out_var).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        ttk.Button(orow, text="選擇", command=self._browse_output).pack(side="left")
+        ttk.Button(orow, text="📂", command=lambda: open_folder(self.out_var.get())).pack(side="left", padx=(4, 0))
+
+        # ── 播放器（含剪裁範圍 + 擷取按鈕）──
         pf = ttk.LabelFrame(self, text="播放器", padding=8)
         pf.pack(fill="x", padx=20, pady=(0, 8))
 
+        # 上排：左側小播放鍵＋時間；右側整合標記按鈕＋時間輸入
         ctrl = ttk.Frame(pf)
         ctrl.pack(fill="x")
-        self.play_btn = ttk.Button(ctrl, text="▶", width=3, command=self._toggle_play, state="disabled")
+
+        ctrl_left = ttk.Frame(ctrl)
+        ctrl_left.pack(side="left")
+        self.play_btn = ttk.Button(ctrl_left, text="▶", width=2, command=self._toggle_play, state="disabled")
         self.play_btn.pack(side="left")
-        self.stop_btn = ttk.Button(ctrl, text="⏹", width=3, command=self._stop, state="disabled")
-        self.stop_btn.pack(side="left", padx=(4, 0))
-        self.time_lbl = ttk.Label(ctrl, text="00:00.000 / 00:00.000")
-        self.time_lbl.pack(side="left", padx=12)
+        self.stop_btn = ttk.Button(ctrl_left, text="⏹", width=2, command=self._stop, state="disabled")
+        self.stop_btn.pack(side="left", padx=(3, 0))
+        self.time_lbl = ttk.Label(ctrl_left, text="00:00.000 / 00:00.000")
+        self.time_lbl.pack(side="left", padx=10)
+
+        ctrl_right = ttk.Frame(ctrl)
+        ctrl_right.pack(side="right")
+        ttk.Button(ctrl_right, text="⬅ 設為開始", command=self._mark_start).pack(side="left")
+        self.start_var = tk.StringVar(value="00:00.000")
+        ttk.Entry(ctrl_right, textvariable=self.start_var, width=9).pack(side="left", padx=(3, 12))
+        ttk.Button(ctrl_right, text="設為結束 ➡", command=self._mark_end).pack(side="left")
+        self.end_var = tk.StringVar(value="00:00.000")
+        ttk.Entry(ctrl_right, textvariable=self.end_var, width=9).pack(side="left", padx=(3, 0))
 
         # 進度條
         self.seek_var = tk.DoubleVar(value=0.0)
         self.seek_bar = ttk.Scale(pf, from_=0, to=100, orient="horizontal",
                                   variable=self.seek_var, command=self._on_seek_move)
-        self.seek_bar.pack(fill="x", pady=(8, 4))
+        self.seek_bar.pack(fill="x", pady=(8, 6))
         self.seek_bar.bind("<ButtonPress-1>", self._on_seek_press)
         self.seek_bar.bind("<ButtonRelease-1>", self._on_seek_release)
 
-        # 標記按鈕
-        mbtn = ttk.Frame(pf)
-        mbtn.pack(fill="x")
-        ttk.Button(mbtn, text="⬅ 設為開始時間", command=self._mark_start).pack(side="left")
-        self.start_indicator = ttk.Label(mbtn, text="開始：--:--.---", foreground="#2288cc")
-        self.start_indicator.pack(side="left", padx=12)
-        self.end_indicator = ttk.Label(mbtn, text="結束：--:--.---", foreground="#cc4422")
-        self.end_indicator.pack(side="right", padx=12)
-        ttk.Button(mbtn, text="設為結束時間 ➡", command=self._mark_end).pack(side="right")
-
-        # ── 剪裁範圍 ──
-        rf = ttk.LabelFrame(self, text="剪裁範圍（可手動輸入）", padding=8)
-        rf.pack(fill="x", padx=20, pady=(0, 8))
-        rrow = ttk.Frame(rf)
-        rrow.pack()
-        ttk.Label(rrow, text="開始時間:").pack(side="left")
-        self.start_var = tk.StringVar(value="00:00.000")
-        ttk.Entry(rrow, textvariable=self.start_var, width=12).pack(side="left", padx=5)
-        ttk.Label(rrow, text="結束時間:").pack(side="left", padx=(20, 0))
-        self.end_var = tk.StringVar(value="00:00.000")
-        ttk.Entry(rrow, textvariable=self.end_var, width=12).pack(side="left", padx=5)
-
-        # ── 輸出 ──
-        of = ttk.LabelFrame(self, text="輸出", padding=8)
-        of.pack(fill="x", padx=20, pady=(0, 8))
-        orow = ttk.Frame(of)
-        orow.pack(fill="x")
-        ttk.Label(orow, text="輸出目錄:").pack(side="left")
-        self.out_var = tk.StringVar(value=load_pref(self._PREF_OUT, os.getcwd()))
-        ttk.Entry(orow, textvariable=self.out_var).pack(side="left", fill="x", expand=True, padx=5)
-        ttk.Button(orow, text="選擇", command=self._browse_output).pack(side="left")
-        ttk.Button(orow, text="📂", command=lambda: open_folder(self.out_var.get())).pack(side="left", padx=(4, 0))
-
-        # ── 擷取按鈕 ──
-        self.extract_btn = ttk.Button(self, text="擷取音檔", command=self._extract)
-        self.extract_btn.pack(pady=8)
+        # 擷取按鈕置中
+        self.extract_btn = ttk.Button(pf, text="擷取音檔", command=self._extract)
+        self.extract_btn.pack()
 
         # ── 執行紀錄 ──
         lf = ttk.LabelFrame(self, text="執行紀錄", padding=8)
@@ -248,7 +238,6 @@ class _AudioClipperPanel(ttk.Frame):
         self.seek_bar.config(to=max(dur, 1.0))
         self.seek_var.set(0.0)
         self.end_var.set(_fmt(dur))
-        self.end_indicator.config(text=f"結束：{_fmt(dur)}")
         self._update_time_lbl()
         self.play_btn.config(state="normal")
         self.stop_btn.config(state="normal")
@@ -308,11 +297,9 @@ class _AudioClipperPanel(ttk.Frame):
 
     def _mark_start(self):
         self.start_var.set(_fmt(self._current_pos))
-        self.start_indicator.config(text=f"開始：{_fmt(self._current_pos)}")
 
     def _mark_end(self):
         self.end_var.set(_fmt(self._current_pos))
-        self.end_indicator.config(text=f"結束：{_fmt(self._current_pos)}")
 
     def _update_time_lbl(self):
         self.time_lbl.config(text=f"{_fmt(self._current_pos)} / {_fmt(self._duration)}")

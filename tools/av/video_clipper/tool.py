@@ -166,47 +166,38 @@ class _VideoClipperPanel(ttk.Frame):
         ctrl = ttk.Frame(pl)
         ctrl.pack(fill="x")
 
-        # 左側播放按鈕 + 時間
+        # 左側小播放鍵 + 時間；右側整合標記＋時間輸入
         ctrl_left = ttk.Frame(ctrl)
         ctrl_left.pack(side="left")
-        self.play_btn = ttk.Button(ctrl_left, text="▶", width=3,
+        self.play_btn = ttk.Button(ctrl_left, text="▶", width=2,
                                    command=self._toggle_play, state="disabled")
         self.play_btn.pack(side="left")
-        self.stop_btn = ttk.Button(ctrl_left, text="⏹", width=3,
+        self.stop_btn = ttk.Button(ctrl_left, text="⏹", width=2,
                                    command=self._stop, state="disabled")
-        self.stop_btn.pack(side="left", padx=(4, 0))
+        self.stop_btn.pack(side="left", padx=(3, 0))
         self.time_lbl = ttk.Label(ctrl_left, text="00:00.000 / 00:00.000")
-        self.time_lbl.pack(side="left", padx=12)
+        self.time_lbl.pack(side="left", padx=10)
 
-        # 右側時間輸入
         ctrl_right = ttk.Frame(ctrl)
         ctrl_right.pack(side="right")
-        ttk.Label(ctrl_right, text="開始:").pack(side="left")
+        ttk.Button(ctrl_right, text="⬅ 設為開始", command=self._mark_start).pack(side="left")
         self.start_var = tk.StringVar(value="00:00.000")
-        ttk.Entry(ctrl_right, textvariable=self.start_var, width=11).pack(side="left", padx=(2, 8))
-        ttk.Label(ctrl_right, text="結束:").pack(side="left")
+        ttk.Entry(ctrl_right, textvariable=self.start_var, width=9).pack(side="left", padx=(3, 12))
+        ttk.Button(ctrl_right, text="設為結束 ➡", command=self._mark_end).pack(side="left")
         self.end_var = tk.StringVar(value="00:00.000")
-        ttk.Entry(ctrl_right, textvariable=self.end_var, width=11).pack(side="left", padx=(2, 0))
+        ttk.Entry(ctrl_right, textvariable=self.end_var, width=9).pack(side="left", padx=(3, 0))
 
         # 進度條
         self.seek_var = tk.DoubleVar(value=0.0)
         self.seek_bar = ttk.Scale(pl, from_=0, to=100, orient="horizontal",
                                   variable=self.seek_var, command=self._on_seek_move)
-        self.seek_bar.pack(fill="x", pady=(8, 4))
+        self.seek_bar.pack(fill="x", pady=(8, 6))
         self.seek_bar.bind("<ButtonPress-1>",   self._on_seek_press)
         self.seek_bar.bind("<ButtonRelease-1>", self._on_seek_release)
 
-        # 標記按鈕列（擷取片段放最右）
-        mbtn = ttk.Frame(pl)
-        mbtn.pack(fill="x", pady=(0, 2))
-        ttk.Button(mbtn, text="⬅ 設為開始時間", command=self._mark_start).pack(side="left")
-        self.start_indicator = ttk.Label(mbtn, text="開始：--:--.---", foreground="#2288cc")
-        self.start_indicator.pack(side="left", padx=12)
-        self.extract_btn = ttk.Button(mbtn, text="擷取片段", command=self._extract)
-        self.extract_btn.pack(side="right")
-        ttk.Button(mbtn, text="設為結束時間 ➡", command=self._mark_end).pack(side="right", padx=(0, 8))
-        self.end_indicator = ttk.Label(mbtn, text="結束：--:--.---", foreground="#cc4422")
-        self.end_indicator.pack(side="right", padx=(0, 12))
+        # 擷取按鈕置中
+        self.extract_btn = ttk.Button(pl, text="擷取片段", command=self._extract)
+        self.extract_btn.pack()
 
         # ── 4. 執行紀錄 + 預覽（同一排，1:1）──
         bottom = ttk.Frame(self)
@@ -292,7 +283,6 @@ class _VideoClipperPanel(ttk.Frame):
         self.seek_bar.config(to=max(dur, 1.0))
         self.seek_var.set(0.0)
         self.end_var.set(_fmt(dur))
-        self.end_indicator.config(text=f"結束：{_fmt(dur)}")
         self._update_time_lbl()
         self.play_btn.config(state="normal")
         self.stop_btn.config(state="normal")
@@ -423,11 +413,9 @@ class _VideoClipperPanel(ttk.Frame):
 
     def _mark_start(self):
         self.start_var.set(_fmt(self._current_pos))
-        self.start_indicator.config(text=f"開始：{_fmt(self._current_pos)}")
 
     def _mark_end(self):
         self.end_var.set(_fmt(self._current_pos))
-        self.end_indicator.config(text=f"結束：{_fmt(self._current_pos)}")
 
     def _update_time_lbl(self):
         self.time_lbl.config(text=f"{_fmt(self._current_pos)} / {_fmt(self._duration)}")
