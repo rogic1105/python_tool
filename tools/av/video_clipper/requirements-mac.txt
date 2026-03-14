@@ -1,0 +1,3 @@
+# macOS — sounddevice + numpy (ffmpeg handles all format decoding)
+sounddevice
+numpy
