@@ -51,6 +51,20 @@ def find_ffmpeg_executable() -> str:
         for p in common_paths:
             if os.path.exists(p):
                 return p
+    elif SYSTEM == "Darwin":
+        mac_paths = [
+            # Homebrew Apple Silicon
+            "/opt/homebrew/bin/ffmpeg",
+            # Homebrew Intel
+            "/usr/local/bin/ffmpeg",
+            # miniconda/anaconda base
+            os.path.expanduser("~/miniconda3/bin/ffmpeg"),
+            os.path.expanduser("~/anaconda3/bin/ffmpeg"),
+            "/opt/homebrew/Caskroom/miniconda/base/bin/ffmpeg",
+        ]
+        for p in mac_paths:
+            if os.path.exists(p):
+                return p
     return "ffmpeg"
 
 
@@ -77,13 +91,22 @@ def ensure_wav_mono16k(input_path: str, output_dir: str) -> str:
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-    cmd = [FFMPEG_CMD, "-y", "-i", input_path, "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000", out_wav]
+    # apad=pad_dur=30 補 30 秒靜音，確保 Whisper 最後一個 30s 窗口不會被 VAD 截掉
+    cmd = [FFMPEG_CMD, "-y", "-i", input_path,
+           "-af", "apad=pad_dur=30",
+           "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000", out_wav]
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=startupinfo)
+        result = subprocess.run(
+            cmd, check=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            startupinfo=startupinfo,
+        )
     except FileNotFoundError:
         raise RuntimeError(f"找不到 FFmpeg！偵測路徑：{FFMPEG_CMD}\n請確認安裝正確。")
-    except subprocess.CalledProcessError:
-        raise RuntimeError("FFmpeg 轉檔失敗，請確認輸入檔案是否損壞。")
+    except subprocess.CalledProcessError as e:
+        stderr_msg = (e.stderr or b"").decode("utf-8", errors="replace").strip()
+        last_lines = "\n".join(stderr_msg.splitlines()[-5:]) if stderr_msg else ""
+        raise RuntimeError(f"FFmpeg 轉檔失敗（{FFMPEG_CMD}）：\n{last_lines}")
     return out_wav
 
 

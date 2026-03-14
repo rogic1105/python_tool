@@ -1,0 +1,5 @@
+# Windows CPU
+numpy
+librosa
+opencv-python
+moviepy

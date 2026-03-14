@@ -1,0 +1,9 @@
+# macOS — CPU (Apple Silicon 支援 CoreML 加速，由 faster-whisper 自動選擇)
+setuptools<81         # webrtcvad 用 pkg_resources，setuptools>=81 會移除它
+faster-whisper
+resemblyzer
+scikit-learn
+librosa
+soundfile
+numpy
+tqdm

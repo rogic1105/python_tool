@@ -1,0 +1,5 @@
+# macOS
+numpy
+librosa
+opencv-python
+moviepy

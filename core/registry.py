@@ -7,6 +7,7 @@ from core.base_tool import BaseTool
 
 CATEGORY_LABELS = {
     "av":         "影音工具",
+    "media":      "媒體工具",
     "divination": "占卜工具",
     "data":       "資料整理",
     "system":     "系統工具",

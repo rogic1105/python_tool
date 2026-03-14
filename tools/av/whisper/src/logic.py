@@ -164,10 +164,11 @@ class Pipeline:
             beam_size=5,
             vad_filter=True,
             vad_parameters={
-                "threshold": 0.05,
+                "threshold": 0.02,           # 歌聲信心分數低（~0.1），需更低門檻
                 "min_silence_duration_ms": 500,
-                "speech_pad_ms": 800,
+                "speech_pad_ms": 1000,       # 結尾段落補足 padding
             },
+            no_speech_threshold=0.3,         # 預設 0.6 太嚴，歌曲後段容易被跳過
             condition_on_previous_text=False,
             initial_prompt=initial_prompt,
         )
